@@ -109,6 +109,7 @@ async def create_note(
     kb_id: UUID,
     body: CreateNote,
     db: Annotated[ScopedDB, Depends(get_scoped_db)],
+    request: Request,
 ):
     kb = await db.fetchval("SELECT id FROM knowledge_bases WHERE id = $1", kb_id)
     if not kb:
@@ -131,6 +132,12 @@ async def create_note(
         f"RETURNING {_DOC_COLUMNS}",
         kb_id, body.filename, body.path, title, body.content, tags,
     )
+
+    if body.content:
+        chunks = chunk_text(body.content)
+        pool = request.app.state.pool
+        await store_chunks(pool, str(row["id"]), str(row["user_id"]), str(kb_id), chunks)
+
     return row
 
 

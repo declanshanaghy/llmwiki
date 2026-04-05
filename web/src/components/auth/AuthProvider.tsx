@@ -45,7 +45,10 @@ export function AuthProvider({ userId, email, children }: AuthProviderProps) {
           router.replace('/onboarding')
         }
       } catch {
-        setOnboarded(true)
+        // If the API is unreachable, don't block — let them through
+        // but only if they've been onboarded before (stored in localStorage)
+        const stored = useUserStore.getState().onboarded
+        if (stored === null) setOnboarded(true)
       }
     })
 

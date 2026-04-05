@@ -81,41 +81,68 @@ export default function WikisPage() {
     return (
       <div className="h-full flex flex-col">
         <PageHeader onNew={() => setDialogOpen(true)} />
-        <div className="flex-1 flex flex-col items-center justify-center gap-10 p-8 max-w-lg mx-auto">
-          <div className="text-center">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Give Claude access to your knowledge.
-            </h1>
-            <p className="mt-3 text-muted-foreground leading-relaxed">
-              Upload your Obsidian vault or markdown files, then connect Claude
-              so it can read, search, and build on your notes across every conversation.
-            </p>
+        <div className="flex-1 flex flex-col items-center justify-center p-8">
+          <div className="w-full max-w-2xl">
+            <div className="text-center mb-12">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-foreground mb-6">
+                <BookOpen size={24} className="text-background" />
+              </div>
+              <h1 className="text-3xl font-bold tracking-tight">
+                Create your first wiki
+              </h1>
+              <p className="mt-3 text-base text-muted-foreground leading-relaxed max-w-md mx-auto">
+                Upload sources, connect Claude, and let it compile a structured wiki automatically.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-4 mb-10">
+              {[
+                {
+                  step: '1',
+                  title: 'Create a wiki',
+                  desc: 'Name your knowledge space. You can have as many as you need.',
+                },
+                {
+                  step: '2',
+                  title: 'Add sources',
+                  desc: 'Upload PDFs, notes, transcripts — anything you want Claude to learn from.',
+                },
+                {
+                  step: '3',
+                  title: 'Ask Claude',
+                  desc: 'Claude reads your sources and compiles a wiki with cross-references and summaries.',
+                },
+              ].map((item) => (
+                <div key={item.step} className="rounded-xl border border-border p-5 bg-card">
+                  <div className="flex items-center justify-center w-7 h-7 rounded-full bg-foreground text-background text-xs font-bold mb-3">
+                    {item.step}
+                  </div>
+                  <h3 className="text-sm font-semibold mb-1">{item.title}</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-col items-center gap-3">
+              <button
+                onClick={handleQuickCreate}
+                disabled={creating}
+                className="inline-flex items-center justify-center gap-2.5 rounded-full bg-foreground text-background px-8 py-3 text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+              >
+                {creating ? (
+                  <><Loader2 size={15} className="animate-spin" /> Setting up...</>
+                ) : (
+                  <><Plus size={15} /> Get started</>
+                )}
+              </button>
+              <button
+                onClick={() => setDialogOpen(true)}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              >
+                or create with a custom name
+              </button>
+            </div>
           </div>
-
-          <div className="flex flex-col gap-3 w-full">
-            <button
-              onClick={handleQuickCreate}
-              disabled={creating}
-              className="flex items-center justify-center gap-2 w-full rounded-lg bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
-            >
-              <Upload size={16} />
-              {creating ? 'Setting up...' : 'Upload your notes'}
-            </button>
-
-            <button
-              onClick={() => setDialogOpen(true)}
-              className="flex items-center justify-center gap-2 w-full rounded-lg border border-input bg-background px-4 py-3 text-sm font-medium hover:bg-accent transition-colors cursor-pointer"
-            >
-              <Plus size={16} />
-              Create a wiki
-            </button>
-          </div>
-
-          <p className="text-xs text-muted-foreground text-center">
-            Supports .md files and Obsidian vaults with frontmatter.
-            <br />
-            Claude connects via MCP — works with Claude.ai, Desktop, and Code.
-          </p>
         </div>
 
         <CreateWikiDialog

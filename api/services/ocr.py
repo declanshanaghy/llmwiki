@@ -138,14 +138,14 @@ class OCRService:
         )
 
         markdown_content = result.content
+        chunks = chunk_text(markdown_content)
+        await store_chunks(self._pool, document_id, user_id, kb_id, chunks)
+
         await self._pool.execute(
             "UPDATE documents SET status = 'ready', content = $2, page_count = 1, updated_at = now() "
             "WHERE id = $1",
             document_id, markdown_content,
         )
-
-        chunks = chunk_text(markdown_content)
-        await store_chunks(self._pool, document_id, user_id, kb_id, chunks)
         logger.info("HTML processed: doc=%s chunks=%d", document_id[:8], len(chunks))
 
     async def _process_spreadsheet(self, document_id: str, user_id: str, kb_id: str, s3_source_key: str, ext: str):
@@ -172,15 +172,15 @@ class OCRService:
                 await self._pool.release(conn)
 
             full_content = "\n\n---\n\n".join(content_parts)
+            page_contents = [(i + 1, md) for i, (_, md) in enumerate(sheets)]
+            chunks = chunk_pages(page_contents)
+            await store_chunks(self._pool, document_id, user_id, kb_id, chunks)
+
             await self._pool.execute(
                 "UPDATE documents SET status = 'ready', content = $2, page_count = $3, updated_at = now() "
                 "WHERE id = $1",
                 document_id, full_content, len(sheets),
             )
-
-            page_contents = [(i + 1, md) for i, (_, md) in enumerate(sheets)]
-            chunks = chunk_pages(page_contents)
-            await store_chunks(self._pool, document_id, user_id, kb_id, chunks)
             logger.info("Spreadsheet processed: doc=%s sheets=%d chunks=%d", document_id[:8], len(sheets), len(chunks))
 
     @staticmethod
@@ -284,14 +284,15 @@ class OCRService:
         full_content = "\n\n---\n\n".join(content_parts)
         page_count = len(pages)
 
+        page_contents = [(page.get("index", 0) + 1, page.get("markdown", "")) for page in pages]
+        chunks = chunk_pages(page_contents)
+        await store_chunks(self._pool, document_id, user_id, kb_id, chunks)
+
         await self._pool.execute(
             "UPDATE documents SET status = 'ready', content = $2, page_count = $3, updated_at = now() "
             "WHERE id = $1",
             document_id, full_content, page_count,
         )
-        page_contents = [(page.get("index", 0) + 1, page.get("markdown", "")) for page in pages]
-        chunks = chunk_pages(page_contents)
-        await store_chunks(self._pool, document_id, user_id, kb_id, chunks)
         logger.info("OCR complete: doc=%s pages=%d chunks=%d", document_id[:8], page_count, len(chunks))
 
     async def _call_mistral_ocr(self, url: str, url_type: str = "document_url") -> dict:
