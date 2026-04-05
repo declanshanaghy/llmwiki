@@ -196,15 +196,22 @@ export function KBSidenav({
         <WikiSelector kbName={kbName} />
       </div>
 
-      {/* Search */}
-      <div className="shrink-0 px-2 pb-1">
+      {/* Search + Upload */}
+      <div className="shrink-0 px-2 pb-1 flex items-center gap-1.5">
         <button
           onClick={() => setSearchOpen(true)}
-          className="flex items-center gap-2 w-full px-2 py-1 text-xs text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent rounded-md transition-colors cursor-pointer"
+          className="flex items-center gap-2 flex-1 px-2.5 py-1.5 text-xs text-muted-foreground/50 hover:text-muted-foreground border border-border hover:bg-accent rounded-md transition-colors cursor-pointer"
         >
           <SearchIcon className="size-3" />
           <span className="flex-1 text-left">Search</span>
           <kbd className="text-[10px] text-muted-foreground/30 bg-muted px-1 rounded">⌘K</kbd>
+        </button>
+        <button
+          onClick={onUpload}
+          className="flex items-center justify-center px-2.5 py-1.5 text-muted-foreground/50 hover:text-muted-foreground border border-border hover:bg-accent rounded-md transition-colors cursor-pointer"
+          title="Upload files"
+        >
+          <Upload className="size-3" />
         </button>
       </div>
 

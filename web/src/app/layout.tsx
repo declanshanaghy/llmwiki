@@ -16,7 +16,22 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "LLM Wiki",
-  description: "A personal wiki built and maintained by your LLM.",
+  description: "Your LLM compiles and maintains a structured wiki from raw sources. Open-source implementation of Karpathy's LLM Wiki.",
+  metadataBase: new URL("https://llmwiki.app"),
+  openGraph: {
+    title: "LLM Wiki",
+    description: "Your LLM compiles and maintains a structured wiki from raw sources.",
+    url: "https://llmwiki.app",
+    siteName: "LLM Wiki",
+    type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "LLM Wiki" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "LLM Wiki",
+    description: "Your LLM compiles and maintains a structured wiki from raw sources.",
+    images: ["/og.png"],
+  },
 };
 
 // Script to prevent theme flash - runs before React hydrates
