@@ -2,23 +2,22 @@
 
 import * as React from 'react'
 import { Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { Loader2, Shield, X } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { Loader2, Shield, Check, X } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 
 function OAuthConsentContent() {
   const searchParams = useSearchParams()
-  const router = useRouter()
   const authorizationId = searchParams.get('authorization_id')
 
   const [details, setDetails] = React.useState<{
-    client_name?: string
+    client?: { name?: string }
     scopes?: string[]
-    redirect_uri?: string
   } | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [submitting, setSubmitting] = React.useState(false)
+  const [success, setSuccess] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     if (!authorizationId) {
@@ -31,9 +30,8 @@ function OAuthConsentContent() {
 
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) {
-        // Not logged in — redirect to login, then back here
         const returnUrl = `/oauth/authorize?authorization_id=${authorizationId}`
-        router.replace(`/login?returnTo=${encodeURIComponent(returnUrl)}`)
+        window.location.href = `/login?returnTo=${encodeURIComponent(returnUrl)}`
         return
       }
 
@@ -42,37 +40,41 @@ function OAuthConsentContent() {
         if (fetchError) throw fetchError
         setDetails(data)
       } catch (err: any) {
-        setError(err.message || 'Failed to load authorization details')
+        console.error('Failed to get authorization details:', err)
       } finally {
         setLoading(false)
       }
     })
-  }, [authorizationId, router])
+  }, [authorizationId])
 
   const handleApprove = async () => {
-    if (!authorizationId) return
+    if (!authorizationId || submitting) return
     setSubmitting(true)
+    setError(null)
     try {
       const supabase = createClient()
-      const { data, error: approveError } = await (supabase.auth as any).oauth.approveAuthorization(authorizationId)
+      const { error: approveError } = await (supabase.auth as any).oauth.approveAuthorization(authorizationId)
       if (approveError) throw approveError
-      window.location.href = data.redirect_to
+      setSuccess('Access granted successfully.')
     } catch (err: any) {
-      setError(err.message || 'Failed to approve')
+      setError(err?.message || 'Failed to approve authorization.')
+    } finally {
       setSubmitting(false)
     }
   }
 
   const handleDeny = async () => {
-    if (!authorizationId) return
+    if (!authorizationId || submitting) return
     setSubmitting(true)
+    setError(null)
     try {
       const supabase = createClient()
-      const { data, error: denyError } = await (supabase.auth as any).oauth.denyAuthorization(authorizationId)
+      const { error: denyError } = await (supabase.auth as any).oauth.denyAuthorization(authorizationId)
       if (denyError) throw denyError
-      window.location.href = data.redirect_to
+      setSuccess('Access denied.')
     } catch (err: any) {
-      setError(err.message || 'Failed to deny')
+      setError(err?.message || 'Failed to deny authorization.')
+    } finally {
       setSubmitting(false)
     }
   }
@@ -85,7 +87,21 @@ function OAuthConsentContent() {
     )
   }
 
-  if (error) {
+  if (success) {
+    return (
+      <div className="min-h-svh flex items-center justify-center bg-background p-8">
+        <div className="text-center max-w-sm">
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-green-100 dark:bg-green-500/10 mb-4">
+            <Check className="size-5 text-green-600 dark:text-green-400" />
+          </div>
+          <h1 className="text-lg font-semibold mb-2">{success}</h1>
+          <p className="text-sm text-muted-foreground">You can close this window.</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error && !details) {
     return (
       <div className="min-h-svh flex items-center justify-center bg-background p-8">
         <div className="text-center max-w-sm">
@@ -97,7 +113,9 @@ function OAuthConsentContent() {
     )
   }
 
-  const clientName = details?.client_name || 'An application'
+  const rawName = details?.client?.name || ''
+  const isClaude = rawName.toLowerCase().includes('claude') || rawName.toLowerCase().includes('anthropic')
+  const clientName = isClaude ? 'Claude' : rawName || 'An MCP client'
 
   return (
     <div className="min-h-svh flex items-center justify-center bg-background p-8">
@@ -106,19 +124,25 @@ function OAuthConsentContent() {
           <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-muted mb-4">
             <Shield className="size-5 text-foreground" />
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">Authorize access</h1>
+          <h1 className="text-xl font-semibold tracking-tight">Connect {clientName}</h1>
           <p className="mt-2 text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{clientName}</span> wants to
-            access your LLM Wiki account.
+            <span className="font-medium text-foreground">{clientName}</span> wants to connect
+            to your LLM Wiki as an MCP server.
           </p>
         </div>
 
+        {error && (
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 mb-4">
+            <p className="text-sm text-destructive">{error}</p>
+          </div>
+        )}
+
         <div className="rounded-lg border border-border p-4 mb-6">
-          <p className="text-sm font-medium mb-2">This will allow it to:</p>
+          <p className="text-sm font-medium mb-2">{clientName} will be able to:</p>
           <ul className="space-y-1.5 text-sm text-muted-foreground">
             <li className="flex items-start gap-2">
               <span className="text-green-500 mt-0.5">&#10003;</span>
-              Read your documents and wiki pages
+              Read your uploaded documents and sources
             </li>
             <li className="flex items-start gap-2">
               <span className="text-green-500 mt-0.5">&#10003;</span>
@@ -126,7 +150,11 @@ function OAuthConsentContent() {
             </li>
             <li className="flex items-start gap-2">
               <span className="text-green-500 mt-0.5">&#10003;</span>
-              Create and edit wiki pages
+              Create, edit, and maintain wiki pages
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="text-green-500 mt-0.5">&#10003;</span>
+              Delete documents and wiki pages
             </li>
           </ul>
         </div>
