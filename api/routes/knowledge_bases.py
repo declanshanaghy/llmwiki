@@ -7,6 +7,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from config import settings
 from deps import get_scoped_db
 from scoped_db import ScopedDB
 
@@ -72,6 +73,12 @@ async def create_knowledge_base(
     body: CreateKnowledgeBase,
     db: Annotated[ScopedDB, Depends(get_scoped_db)],
 ):
+    user_count = await db.fetchval("SELECT COUNT(DISTINCT id) FROM users")
+    if user_count and user_count >= settings.GLOBAL_MAX_USERS:
+        raise HTTPException(
+            status_code=503,
+            detail="We've reached our user capacity for now. Please try again later.",
+        )
     slug = await _unique_slug(db, body.name)
     row = await db.fetchrow(
         "INSERT INTO knowledge_bases (user_id, name, slug, description) "

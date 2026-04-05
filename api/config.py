@@ -24,5 +24,9 @@ class Settings(BaseSettings):
     QUOTA_MAX_PAGES: int = 1000
     QUOTA_MAX_STORAGE_BYTES: int = 2_147_483_648  # 2 GB
 
+    GLOBAL_OCR_ENABLED: bool = True
+    GLOBAL_MAX_PAGES: int = 50_000
+    GLOBAL_MAX_USERS: int = 200
+
 
 settings = Settings()

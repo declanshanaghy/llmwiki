@@ -34,8 +34,22 @@ class OCRService:
         async with self._semaphore:
             await self._do_process(document_id, user_id)
 
+    async def _check_global_limits(self, document_id: str):
+        if not settings.GLOBAL_OCR_ENABLED:
+            raise ValueError("OCR processing is temporarily disabled by the administrator.")
+
+        total_pages = await self._pool.fetchval(
+            "SELECT COALESCE(SUM(page_count), 0) FROM documents WHERE NOT archived"
+        )
+        if total_pages >= settings.GLOBAL_MAX_PAGES:
+            raise ValueError(
+                f"Platform page limit reached ({settings.GLOBAL_MAX_PAGES:,} pages). "
+                "Please contact the administrator."
+            )
+
     async def _do_process(self, document_id: str, user_id: str):
         try:
+            await self._check_global_limits(document_id)
             await self._set_status(document_id, "processing")
 
             doc = await self._pool.fetchrow(
