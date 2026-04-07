@@ -165,9 +165,10 @@ export function KBDetail({ kbId, kbName }: Props) {
 
   // Wiki state
   const indexDoc = wikiDocs.find((d) => d.filename === 'index.json' && d.path === '/wiki/')
+  const SCAFFOLD_FILES = new Set(['index.json', 'overview.md', 'log.md'])
   const hasNavigableWiki = React.useMemo(
-    () => wikiDocs.some((d) => d.id !== indexDoc?.id),
-    [wikiDocs, indexDoc?.id],
+    () => wikiDocs.some((d) => d.path === '/wiki/' ? !SCAFFOLD_FILES.has(d.filename) : true),
+    [wikiDocs],
   )
   const [wikiTree, setWikiTree] = React.useState<WikiNode[]>([])
   const [wikiActivePath, setWikiActivePath] = React.useState<string | null>(null)

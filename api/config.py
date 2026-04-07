@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     S3_BUCKET: str = "supavault-documents"
     MISTRAL_API_KEY: str = ""
+    PDF_BACKEND: str = "pdf_oxide"  # "pdf_oxide" or "mistral"
     STAGE: str = "dev"
     APP_URL: str = "http://localhost:3000"
     API_URL: str = "http://localhost:8000"
