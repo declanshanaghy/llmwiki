@@ -32,7 +32,6 @@ __pycache__/
 Thumbs.db
 
 # Misc
-package-lock.json
 
 # Local Netlify folder
 .netlify
