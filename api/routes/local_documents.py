@@ -4,11 +4,8 @@ Same URL patterns as hosted documents.py but uses SQLite repos
 and writes wiki files to disk before updating the index.
 """
 
-import json
 import re
-from datetime import datetime
 from pathlib import Path
-from uuid import UUID
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -67,8 +64,27 @@ def _get_repos(request: Request):
     return SQLiteDocumentRepository(db), SQLiteChunkRepository(db)
 
 
-def _workspace_path() -> Path:
+def _workspace_root() -> Path:
     return Path(settings.WORKSPACE_PATH).resolve()
+
+
+def _safe_resolve(relative: str) -> Path:
+    """Resolve a relative path safely within the workspace. Raises 400 on traversal."""
+    ws = _workspace_root()
+    resolved = (ws / relative).resolve()
+    if not resolved.is_relative_to(ws):
+        raise HTTPException(status_code=400, detail="Path escapes workspace")
+    return resolved
+
+
+def _doc_to_disk_path(doc: dict) -> Path | None:
+    """Get the resolved disk path for a document. Returns None if outside workspace."""
+    relative = (doc["path"].rstrip("/") + "/" + doc["filename"]).lstrip("/")
+    ws = _workspace_root()
+    resolved = (ws / relative).resolve()
+    if resolved.is_relative_to(ws):
+        return resolved
+    return None
 
 
 # ── Read routes ──
@@ -95,19 +111,37 @@ async def get_document(doc_id: str, user_id: str = Depends(get_user_id), request
 
 @router.get("/v1/documents/{doc_id}/url")
 async def get_document_url(doc_id: str, user_id: str = Depends(get_user_id), request: Request = None):
+    """Return a local file URL for viewing the document.
+
+    For workspace files, serves the actual file via /v1/files/.
+    For processed artifacts (converted PDFs, tagged HTML), serves from .llmwiki/cache/.
+    """
     doc_repo, _ = _get_repos(request)
-    row = await doc_repo.get_for_url(doc_id)
-    if not row:
+    doc = await doc_repo.get(doc_id)
+    if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
-    storage = request.app.state.storage_service
-    if not storage:
-        raise HTTPException(status_code=501, detail="Storage not configured")
+    api_url = settings.API_URL.rstrip("/")
 
-    ext = row["filename"].rsplit(".", 1)[-1].lower() if "." in row["filename"] else row["file_type"]
-    s3_key = f"{row.get('user_id', 'local')}/{row['id']}/source.{ext}"
-    url = await storage.generate_url(s3_key)
-    return {"url": url}
+    # Check for converted/processed versions in cache first
+    ext = doc["filename"].rsplit(".", 1)[-1].lower() if "." in doc["filename"] else doc.get("file_type", "")
+    office_types = {"pptx", "ppt", "docx", "doc"}
+    html_types = {"html", "htm"}
+
+    if ext in office_types:
+        cache_key = f"{doc.get('user_id', 'local')}/{doc['id']}/converted.pdf"
+        cache_path = _workspace_root() / ".llmwiki" / "cache" / cache_key
+        if cache_path.is_file():
+            return {"url": f"{api_url}/v1/files/{cache_key}"}
+    elif ext in html_types:
+        cache_key = f"{doc.get('user_id', 'local')}/{doc['id']}/tagged.html"
+        cache_path = _workspace_root() / ".llmwiki" / "cache" / cache_key
+        if cache_path.is_file():
+            return {"url": f"{api_url}/v1/files/{cache_key}"}
+
+    # Fall back to the actual workspace file
+    relative = doc.get("relative_path") or (doc["path"].rstrip("/") + "/" + doc["filename"]).lstrip("/")
+    return {"url": f"{api_url}/v1/files/{relative}"}
 
 
 @router.get("/v1/documents/{doc_id}/content")
@@ -142,12 +176,11 @@ async def create_note(
     if isinstance(meta.get("tags"), list):
         tags = [str(t) for t in meta["tags"] if t is not None]
 
-    # Write file to disk first
+    # Write file to disk first — resolve safely
     relative = (body.path.rstrip("/") + "/" + body.filename).lstrip("/")
-    file_path = _workspace_path() / relative
+    file_path = _safe_resolve(relative)
     file_path.parent.mkdir(parents=True, exist_ok=True)
-    if body.content:
-        file_path.write_text(body.content, encoding="utf-8")
+    file_path.write_text(body.content or "", encoding="utf-8")
 
     # Then update index
     row = await doc_repo.create_note(
@@ -170,15 +203,13 @@ async def update_document_content(
 ):
     doc_repo, chunk_repo = _get_repos(request)
 
-    # Get the doc to find its file path
     doc = await doc_repo.get(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
     # Write file to disk first
-    relative = (doc["path"].rstrip("/") + "/" + doc["filename"]).lstrip("/")
-    file_path = _workspace_path() / relative
-    if file_path.is_relative_to(_workspace_path()):
+    file_path = _doc_to_disk_path(doc)
+    if file_path:
         file_path.write_text(body.content, encoding="utf-8")
 
     # Then update index
@@ -203,11 +234,11 @@ async def update_document_metadata(
 ):
     doc_repo, _ = _get_repos(request)
 
+    doc = await doc_repo.get(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
     fields = {}
-    if body.filename is not None:
-        fields["filename"] = body.filename
-    if body.path is not None:
-        fields["path"] = body.path
     if body.title is not None:
         fields["title"] = body.title
     if body.tags is not None:
@@ -216,6 +247,29 @@ async def update_document_metadata(
         fields["date"] = body.date if body.date else None
     if body.metadata is not None:
         fields["metadata"] = body.metadata
+
+    # Handle filename/path rename — move the actual file
+    old_path = _doc_to_disk_path(doc)
+    needs_move = False
+
+    if body.filename is not None:
+        fields["filename"] = body.filename
+        needs_move = True
+    if body.path is not None:
+        fields["path"] = body.path
+        needs_move = True
+
+    if needs_move and old_path and old_path.is_file():
+        new_filename = body.filename or doc["filename"]
+        new_dir = body.path or doc["path"]
+        new_relative = (new_dir.rstrip("/") + "/" + new_filename).lstrip("/")
+        new_path = _safe_resolve(new_relative)
+        new_path.parent.mkdir(parents=True, exist_ok=True)
+        old_path.rename(new_path)
+        # Update relative_path in fields
+        fields["relative_path"] = new_relative
+        # Recompute source_kind
+        fields["source_kind"] = "wiki" if new_dir.strip("/").startswith("wiki") else "source"
 
     if not fields:
         raise HTTPException(status_code=400, detail="No fields to update")
@@ -236,13 +290,11 @@ async def bulk_delete_documents(
         return
     doc_repo, _ = _get_repos(request)
 
-    # Delete files from disk
     for doc_id in body.ids:
         doc = await doc_repo.get(doc_id)
         if doc:
-            relative = (doc["path"].rstrip("/") + "/" + doc["filename"]).lstrip("/")
-            file_path = _workspace_path() / relative
-            if file_path.is_file() and file_path.is_relative_to(_workspace_path()):
+            file_path = _doc_to_disk_path(doc)
+            if file_path and file_path.is_file():
                 file_path.unlink()
 
     await doc_repo.bulk_archive(body.ids, user_id)
@@ -256,12 +308,10 @@ async def delete_document(
 ):
     doc_repo, _ = _get_repos(request)
 
-    # Delete file from disk
     doc = await doc_repo.get(doc_id)
     if doc:
-        relative = (doc["path"].rstrip("/") + "/" + doc["filename"]).lstrip("/")
-        file_path = _workspace_path() / relative
-        if file_path.is_file() and file_path.is_relative_to(_workspace_path()):
+        file_path = _doc_to_disk_path(doc)
+        if file_path and file_path.is_file():
             file_path.unlink()
 
     deleted = await doc_repo.archive(doc_id, user_id)
