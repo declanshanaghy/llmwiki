@@ -94,7 +94,7 @@ async def upload_file(
     )
     await db.commit()
 
-    # Chunk text content
+    # Chunk text content or kick off processing for non-text files
     if text_content:
         from services.chunker import chunk_text
         ws_row = await db.execute("SELECT id FROM workspace LIMIT 1")
@@ -102,6 +102,12 @@ async def upload_file(
         kb_id = ws[0] if ws else ""
         chunks = chunk_text(text_content)
         await chunk_repo.store(doc_id, user_id, kb_id, chunks)
+    else:
+        # Non-text file: process in background (PDF extraction, spreadsheet parsing, etc.)
+        import asyncio
+        from pathlib import Path as P
+        from domain.local_processor import process_document
+        asyncio.create_task(process_document(db, doc_id, P(settings.WORKSPACE_PATH).resolve()))
 
     doc = await doc_repo.get(doc_id)
     return doc

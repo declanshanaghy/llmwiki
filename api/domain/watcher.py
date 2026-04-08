@@ -125,7 +125,14 @@ async def _index_file(db: aiosqlite.Connection, workspace: Path, file_path: Path
             "WHERE id = ?",
             (content, stat.st_size, content_hash, int(stat.st_mtime_ns), doc_id),
         )
+        await db.commit()
         logger.info("Re-indexed (modified): %s", relative)
+        # Re-process non-text files
+        if ext not in TEXT_EXTENSIONS and ext:
+            from domain.local_processor import process_document as _process
+            import asyncio
+            asyncio.create_task(_process(db, doc_id, workspace))
+        return
     else:
         # Create new
         doc_id = str(uuid.uuid4())
@@ -135,17 +142,23 @@ async def _index_file(db: aiosqlite.Connection, workspace: Path, file_path: Path
         row = await cursor.fetchone()
         doc_number = row[0]
 
+        status = "ready" if content is not None else "pending"
         await db.execute(
             "INSERT INTO documents (id, user_id, filename, title, path, relative_path, "
             "source_kind, file_type, file_size, status, content, tags, version, "
             "content_hash, mtime_ns, last_indexed_at, document_number) "
             "VALUES (?, (SELECT user_id FROM workspace LIMIT 1), ?, ?, ?, ?, ?, ?, ?, "
-            "'ready', ?, '[]', 0, ?, ?, datetime('now'), ?)",
+            "?, ?, '[]', 0, ?, ?, datetime('now'), ?)",
             (doc_id, filename, title, dir_path, relative, source_kind,
-             ext or "bin", stat.st_size, content, content_hash,
+             ext or "bin", stat.st_size, status, content, content_hash,
              int(stat.st_mtime_ns), doc_number),
         )
         logger.info("Indexed (new): %s", relative)
+        # Process non-text files (PDFs, spreadsheets, images, HTML)
+        if status == "pending":
+            from domain.local_processor import process_document as _process
+            import asyncio
+            asyncio.create_task(_process(db, doc_id, workspace))
 
     await db.commit()
 
