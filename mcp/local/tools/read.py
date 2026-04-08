@@ -9,7 +9,7 @@ from infra.db.sqlite import (
     batch_list_documents, get_workspace,
 )
 from infra.storage.local import load_bytes
-from tools.helpers import get_user_id, deep_link, resolve_path, parse_page_range, glob_match
+from .helpers import get_user_id, deep_link, resolve_path, parse_page_range, glob_match
 from tools.read import (
     _text, _image, _extract_sections, _IMG_MIME,
     MAX_BATCH_CHARS,

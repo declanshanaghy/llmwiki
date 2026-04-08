@@ -16,7 +16,7 @@ from infra.db.sqlite import (
     get_document, create_document, update_document_content, get_workspace,
 )
 from infra.storage.local import resolve_workspace_path
-from tools.helpers import get_user_id, deep_link, resolve_path
+from .helpers import get_user_id, deep_link, resolve_path
 
 _ASSET_EXTENSIONS = {".svg", ".csv", ".json", ".xml", ".html"}
 

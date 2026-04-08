@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP, Context
 
 from infra.db.sqlite import list_documents, get_document, archive_documents, get_workspace
 from infra.storage.local import resolve_workspace_path
-from tools.helpers import get_user_id, glob_match, resolve_path
+from .helpers import get_user_id, glob_match, resolve_path
 
 _PROTECTED_FILES = {("/wiki/", "overview.md"), ("/wiki/", "log.md")}
 

@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP, Context
 
 from config import settings
 from infra.db.sqlite import list_knowledge_bases
-from tools.helpers import get_user_id
+from .helpers import get_user_id
 from tools.guide import GUIDE_TEXT
 
 

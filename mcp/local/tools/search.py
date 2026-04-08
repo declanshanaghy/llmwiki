@@ -9,7 +9,7 @@ from infra.db.sqlite import (
     list_knowledge_bases, list_documents, search_chunks, get_document,
     get_workspace,
 )
-from tools.helpers import get_user_id, deep_link, glob_match, resolve_path, MAX_LIST, MAX_SEARCH
+from .helpers import get_user_id, deep_link, glob_match, resolve_path, MAX_LIST, MAX_SEARCH
 from tools.search import _extract_snippet
 
 logger = logging.getLogger(__name__)
