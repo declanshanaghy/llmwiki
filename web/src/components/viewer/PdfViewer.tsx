@@ -16,11 +16,12 @@ type Props = {
   fileUrl: string
   title?: string
   className?: string
+  initialPage?: number
 }
 
 const VIRTUALIZE_BUFFER = 2
 
-export default function PdfViewer({ fileUrl, title, className }: Props) {
+export default function PdfViewer({ fileUrl, title, className, initialPage }: Props) {
   const [numPages, setNumPages] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -103,6 +104,25 @@ export default function PdfViewer({ fileUrl, title, className }: Props) {
       setCurrentPage(page)
     }
   }, [])
+
+  // Scroll to initial page (e.g., from citation click) after pages render
+  const initialPageScrolled = useRef(false)
+  useEffect(() => {
+    if (!initialPage || initialPage <= 1 || !numPages || initialPageScrolled.current) return
+    const target = Math.min(initialPage, numPages)
+    setVisiblePages((prev) => {
+      const next = new Set(prev)
+      for (let p = Math.max(1, target - VIRTUALIZE_BUFFER); p <= Math.min(numPages, target + VIRTUALIZE_BUFFER); p++) {
+        next.add(p)
+      }
+      return next
+    })
+    const timer = setTimeout(() => {
+      scrollToPage(target)
+      initialPageScrolled.current = true
+    }, 200)
+    return () => clearTimeout(timer)
+  }, [initialPage, numPages, scrollToPage])
 
   useEffect(() => {
     const container = containerRef.current

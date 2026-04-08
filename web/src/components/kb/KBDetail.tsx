@@ -181,6 +181,7 @@ export function KBDetail({ kbId, kbName }: Props) {
 
   // Source doc selection state — synced with ?doc= query param
   const [activeSourceDocId, setActiveSourceDocId] = React.useState<string | null>(null)
+  const [sourceInitialPage, setSourceInitialPage] = React.useState<number | undefined>()
   const activeSourceDoc = React.useMemo(
     () => activeSourceDocId ? sourceDocs.find((d) => d.id === activeSourceDocId) ?? null : null,
     [activeSourceDocId, sourceDocs],
@@ -331,14 +332,13 @@ export function KBDetail({ kbId, kbName }: Props) {
 
   const handleSourceSelect = React.useCallback((doc: DocumentListItem) => {
     setActiveSourceDocId(doc.id)
+    setSourceInitialPage(undefined)
     setWikiActivePath(null)
     clearSelection()
     updateUrl({ docNumber: doc.document_number })
   }, [updateUrl, clearSelection])
 
-  const handleCitationSourceClick = React.useCallback((source: string) => {
-    // Source may include page ref like "file.pdf, p.3" — strip it
-    const filename = source.replace(/,\s*p\.?\s*.+$/, '').trim()
+  const handleCitationSourceClick = React.useCallback((filename: string, page?: number) => {
     const lower = filename.toLowerCase()
 
     const match = sourceDocs.find((d) => {
@@ -351,7 +351,10 @@ export function KBDetail({ kbId, kbName }: Props) {
         fn.replace(/\.md$/, '') === lower
       )
     })
-    if (match) handleSourceSelect(match)
+    if (match) {
+      setSourceInitialPage(page)
+      handleSourceSelect(match)
+    }
   }, [sourceDocs, handleSourceSelect])
 
   // Restore the last-opened wiki page after a hard reload.
@@ -455,6 +458,15 @@ export function KBDetail({ kbId, kbName }: Props) {
       })
   }, [wikiActivePath, token, activeWikiDocId, activeWikiVersion])
 
+  const wikiPathSet = React.useMemo(() => {
+    const set = new Set<string>()
+    for (const d of wikiDocs) {
+      const relative = (d.path + d.filename).replace(/^\/wiki\/?/, '')
+      set.add(relative)
+    }
+    return set
+  }, [wikiDocs])
+
   const handleWikiNavigate = React.useCallback(
     (path: string) => {
       let nextPath = path
@@ -463,7 +475,11 @@ export function KBDetail({ kbId, kbName }: Props) {
         nextPath = path.replace(/^\/wiki\/?/, '')
       } else if (path.startsWith('/')) {
         nextPath = path.slice(1)
+      } else if (wikiPathSet.has(path)) {
+        // Path directly matches an existing wiki doc — use as-is
+        nextPath = path
       } else if (wikiActivePath) {
+        // Resolve relative to current page's directory
         const dir = wikiActivePath.includes('/')
           ? wikiActivePath.substring(0, wikiActivePath.lastIndexOf('/'))
           : ''
@@ -471,7 +487,6 @@ export function KBDetail({ kbId, kbName }: Props) {
           ? (dir ? dir + '/' : '') + path.slice(2)
           : (dir ? dir + '/' : '') + path
 
-        // Resolve ../
         while (resolved.includes('../')) {
           resolved = resolved.replace(/[^/]*\/\.\.\//, '')
         }
@@ -480,7 +495,7 @@ export function KBDetail({ kbId, kbName }: Props) {
       setWikiActivePath(nextPath)
       updateUrl({ pagePath: nextPath })
     },
-    [wikiActivePath, updateUrl],
+    [wikiActivePath, wikiPathSet, updateUrl],
   )
 
   // Document actions
@@ -698,8 +713,9 @@ export function KBDetail({ kbId, kbName }: Props) {
       )}
 
       <div className="flex-1 overflow-hidden flex">
-        <div className="w-56 shrink-0">
+        <div className="w-64 shrink-0">
           <KBSidenav
+            kbId={kbId}
             kbName={kbName}
             wikiTree={wikiTree}
             wikiActivePath={wikiActivePath}
@@ -742,7 +758,7 @@ export function KBDetail({ kbId, kbName }: Props) {
             ) : activeSourceDoc.status === 'failed' ? (
               <FailedViewer title={activeSourceDoc.title || activeSourceDoc.filename} errorMessage={activeSourceDoc.error_message} />
             ) : ['pdf', 'pptx', 'ppt', 'docx', 'doc'].includes(activeSourceDoc.file_type) ? (
-              <PdfDocViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} />
+              <PdfDocViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} initialPage={sourceInitialPage} />
             ) : ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(activeSourceDoc.file_type) ? (
               <ImageViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} />
             ) : ['html', 'htm'].includes(activeSourceDoc.file_type) ? (

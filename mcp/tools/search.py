@@ -4,7 +4,7 @@ from typing import Literal
 from mcp.server.fastmcp import FastMCP, Context
 
 from db import scoped_query, scoped_queryrow
-from .helpers import get_user_id, resolve_kb, deep_link, glob_match, MAX_LIST, MAX_SEARCH
+from .helpers import get_user_id, resolve_kb, deep_link, glob_match, resolve_path, MAX_LIST, MAX_SEARCH
 
 logger = logging.getLogger(__name__)
 
@@ -143,6 +143,110 @@ async def _search_chunks(
     return "\n".join(lines)
 
 
+async def _query_references(user_id: str, kb: dict, path: str, query: str) -> str:
+    if query == "uncited":
+        rows = await scoped_query(
+            user_id,
+            "SELECT d.filename, d.title, d.path, d.file_type "
+            "FROM documents d "
+            "WHERE d.knowledge_base_id = $1 AND NOT d.archived "
+            "  AND d.path NOT LIKE '/wiki/%%' "
+            "  AND d.id NOT IN (SELECT target_document_id FROM document_references WHERE reference_type = 'cites') "
+            "ORDER BY d.filename",
+            kb["id"],
+        )
+        if not rows:
+            return "All sources are cited in at least one wiki page."
+        lines = [f"**{len(rows)} uncited source(s)** — not referenced by any wiki page:\n"]
+        for r in rows:
+            lines.append(f"  {r['path']}{r['filename']} ({r['file_type']})")
+        return "\n".join(lines)
+
+    if query == "stale":
+        rows = await scoped_query(
+            user_id,
+            "SELECT d.filename, d.title, d.path, d.stale_since "
+            "FROM documents d "
+            "WHERE d.knowledge_base_id = $1 AND NOT d.archived "
+            "  AND d.stale_since IS NOT NULL "
+            "ORDER BY d.stale_since DESC",
+            kb["id"],
+        )
+        if not rows:
+            return "No stale pages found."
+        lines = [f"**{len(rows)} potentially stale page(s)** — a page they reference was updated:\n"]
+        for r in rows:
+            stale = r["stale_since"].strftime("%Y-%m-%d %H:%M") if r["stale_since"] else ""
+            title = r["title"] or r["filename"]
+            lines.append(f"  {r['path']}{r['filename']} ({title}) — stale since {stale}")
+        return "\n".join(lines)
+
+    # Default: show references for a specific document
+    if not path or path in ("*", "**"):
+        return "references mode requires a `path` to a specific document, or `query=\"uncited\"` / `query=\"stale\"`."
+
+    dir_path, filename = resolve_path(path)
+    doc = await scoped_queryrow(
+        user_id,
+        "SELECT id, filename, title, path FROM documents "
+        "WHERE knowledge_base_id = $1 AND filename = $2 AND path = $3 AND NOT archived",
+        kb["id"], filename, dir_path,
+    )
+    if not doc:
+        return f"Document '{path}' not found."
+
+    # Forward references (what this page cites/links to)
+    forward = await scoped_query(
+        user_id,
+        "SELECT d.filename, d.title, d.path, dr.reference_type, dr.page "
+        "FROM document_references dr "
+        "JOIN documents d ON dr.target_document_id = d.id "
+        "WHERE dr.source_document_id = $1 AND NOT d.archived "
+        "ORDER BY dr.reference_type, d.path, d.filename",
+        doc["id"],
+    )
+
+    # Backlinks (what references this page)
+    backlinks = await scoped_query(
+        user_id,
+        "SELECT d.filename, d.title, d.path, dr.reference_type, dr.page "
+        "FROM document_references dr "
+        "JOIN documents d ON dr.source_document_id = d.id "
+        "WHERE dr.target_document_id = $1 AND NOT d.archived "
+        "ORDER BY dr.reference_type, d.path, d.filename",
+        doc["id"],
+    )
+
+    title = doc["title"] or doc["filename"]
+    lines = [f"**References for {title}** (`{dir_path}{filename}`):\n"]
+
+    if forward:
+        cites = [r for r in forward if r["reference_type"] == "cites"]
+        links = [r for r in forward if r["reference_type"] == "links_to"]
+        if cites:
+            lines.append(f"**Cites ({len(cites)} sources):**")
+            for r in cites:
+                page_str = f", p.{r['page']}" if r["page"] else ""
+                lines.append(f"  {r['path']}{r['filename']}{page_str}")
+        if links:
+            lines.append(f"\n**Links to ({len(links)} pages):**")
+            for r in links:
+                lines.append(f"  {r['path']}{r['filename']} ({r['title'] or r['filename']})")
+    else:
+        lines.append("No outgoing references.")
+
+    lines.append("")
+    if backlinks:
+        lines.append(f"**Referenced by ({len(backlinks)} pages):**")
+        for r in backlinks:
+            ref = "cites" if r["reference_type"] == "cites" else "links to"
+            lines.append(f"  {r['path']}{r['filename']} ({r['title'] or r['filename']}) — {ref}")
+    else:
+        lines.append("No incoming references (backlinks).")
+
+    return "\n".join(lines)
+
+
 def register(mcp: FastMCP) -> None:
 
     @mcp.tool(
@@ -152,7 +256,13 @@ def register(mcp: FastMCP) -> None:
             "Sources (raw documents) live at `/`. Wiki pages (LLM-compiled) live at `/wiki/`.\n\n"
             "Modes:\n"
             "- list: browse files and folders\n"
-            "- search: keyword search across document content (searches chunks for precise results with page numbers)\n\n"
+            "- search: keyword search across document content (searches chunks for precise results with page numbers)\n"
+            "- references: query the citation/link graph for a document\n\n"
+            "References mode examples:\n"
+            "- `search(mode=\"references\", path=\"/wiki/concepts/scaling.md\")` — what it cites + what links to it\n"
+            "- `search(mode=\"references\", path=\"paper.pdf\")` — which wiki pages cite this source\n"
+            "- `search(mode=\"references\", query=\"uncited\")` — sources with no wiki citations\n"
+            "- `search(mode=\"references\", query=\"stale\")` — pages flagged as potentially stale\n\n"
             "Use `path` to scope: `*` for root, `/wiki/**` for wiki only, `*.pdf` for PDFs, etc.\n"
             "Use `tags` to filter by document tags."
         ),
@@ -160,7 +270,7 @@ def register(mcp: FastMCP) -> None:
     async def search(
         ctx: Context,
         knowledge_base: str,
-        mode: Literal["list", "search"] = "list",
+        mode: Literal["list", "search", "references"] = "list",
         query: str = "",
         path: str = "*",
         tags: list[str] | None = None,
@@ -181,5 +291,7 @@ def register(mcp: FastMCP) -> None:
             if not query:
                 return "search mode requires a query."
             return await _search_chunks(user_id, kb, query, path, tags, min(limit, MAX_SEARCH))
+        elif mode == "references":
+            return await _query_references(user_id, kb, path, query)
 
         return f"Unknown mode: {mode}"

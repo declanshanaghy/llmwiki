@@ -152,7 +152,7 @@ function CitationBadge({
 }: {
   num: string
   source: string
-  onSourceClick: (source: string) => void
+  onSourceClick: (source: string, page?: number) => void
 }) {
   const [isOpen, setIsOpen] = React.useState(false)
   const hoverTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -177,6 +177,7 @@ function CitationBadge({
   const parts = source.match(/^(.+?)(?:,\s*p\.?\s*(.+))?$/)
   const filename = parts?.[1]?.trim() ?? source
   const pageRef = parts?.[2]?.trim()
+  const pageNum = pageRef ? parseInt(pageRef, 10) : undefined
 
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
@@ -187,7 +188,7 @@ function CitationBadge({
           onMouseLeave={handleMouseLeave}
           onClick={(e) => {
             e.preventDefault()
-            onSourceClick(filename)
+            onSourceClick(filename, pageNum)
           }}
           className="inline-flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-medium bg-accent-blue/10 text-accent-blue rounded-full border border-accent-blue/20 hover:bg-accent-blue/20 transition-colors leading-tight cursor-pointer"
         >
@@ -207,7 +208,7 @@ function CitationBadge({
           className="flex items-start gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-accent/50 transition-colors"
           onClick={() => {
             setIsOpen(false)
-            onSourceClick(filename)
+            onSourceClick(filename, pageNum)
           }}
         >
           <span className="text-muted-foreground shrink-0 mt-0.5">
@@ -338,7 +339,7 @@ interface WikiContentProps {
   content: string
   title: string
   onNavigate: (path: string) => void
-  onSourceClick?: (filename: string) => void
+  onSourceClick?: (filename: string, page?: number) => void
   documents?: DocumentListItem[]
 }
 
@@ -512,8 +513,8 @@ export function WikiContent({ content, title, onNavigate, onSourceClick, documen
                 <CitationBadge
                   num={num}
                   source={source}
-                  onSourceClick={(filename) => {
-                    if (onSourceClick) onSourceClick(filename)
+                  onSourceClick={(filename, page) => {
+                    if (onSourceClick) onSourceClick(filename, page)
                   }}
                 />
               </sup>

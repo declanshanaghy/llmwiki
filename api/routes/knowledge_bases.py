@@ -177,6 +177,10 @@ async def update_knowledge_base(
         updates.append(f"name = ${idx}")
         params.append(body.name)
         idx += 1
+        new_slug = await _unique_slug(pool, user_id, body.name)
+        updates.append(f"slug = ${idx}")
+        params.append(new_slug)
+        idx += 1
     if body.description is not None:
         updates.append(f"description = ${idx}")
         params.append(body.description)

@@ -152,6 +152,18 @@ Link between wiki pages using standard markdown links to other wiki paths.
 ### Maintain the Wiki (Lint)
 Check for: contradictions, orphan pages, missing cross-references, stale claims, concepts mentioned but lacking their own page. Append a lint entry to `/wiki/log.md`.
 
+## Reference Graph
+
+Every write automatically parses citations and cross-references and stores them as graph edges. This means:
+
+- **After every write**, the response shows which other pages reference the page you just edited — update them if needed.
+- **Backlinks on read**: when you read a page, you see "Referenced by" at the bottom — the incoming graph.
+- **`search(mode="references", path="page.md")`** — shows what a page cites (forward) and what cites it (backlinks).
+- **`search(mode="references", query="uncited")`** — sources uploaded but never cited in any wiki page.
+- **`search(mode="references", query="stale")`** — pages flagged as potentially stale because a page they link to was updated.
+
+Use the reference graph to maintain consistency. After editing a page, check the impact surface in the response and update affected pages.
+
 ## Available Knowledge Bases
 
 """

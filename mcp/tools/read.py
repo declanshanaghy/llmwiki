@@ -10,6 +10,7 @@ from .helpers import (
     get_user_id, resolve_kb, deep_link, resolve_path,
     load_s3_bytes, parse_page_range, glob_match,
 )
+from .references import get_backlinks_summary
 
 logger = logging.getLogger(__name__)
 
@@ -319,4 +320,5 @@ def register(mcp: FastMCP) -> None:
         if sections:
             content = _extract_sections(content, sections)
 
-        return header + content
+        backlinks = await get_backlinks_summary(user_id, str(doc["id"]))
+        return header + content + backlinks

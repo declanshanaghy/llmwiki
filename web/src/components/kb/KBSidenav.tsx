@@ -89,6 +89,7 @@ function buildSourceTree(docs: DocumentListItem[]): SourceNode[] {
 }
 
 interface KBSidenavProps {
+  kbId: string
   kbName: string
   wikiTree: WikiNode[]
   wikiActivePath: string | null
@@ -111,6 +112,7 @@ interface KBSidenavProps {
 }
 
 export function KBSidenav({
+  kbId,
   kbName,
   wikiTree,
   wikiActivePath,
@@ -131,25 +133,9 @@ export function KBSidenav({
   selectedIds = new Set(),
   onSelect,
 }: KBSidenavProps) {
-  const [sourcesExpanded, setSourcesExpanded] = React.useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem('llmwiki:sources-expanded') === 'true'
-  })
+  const [sourcesExpanded, setSourcesExpanded] = React.useState(false)
 
-  const prevSourceCount = React.useRef(sourceDocs.length)
-  React.useEffect(() => {
-    if (sourceDocs.length > prevSourceCount.current && !sourcesExpanded) {
-      setSourcesExpanded(true)
-      localStorage.setItem('llmwiki:sources-expanded', 'true')
-    }
-    prevSourceCount.current = sourceDocs.length
-  }, [sourceDocs.length, sourcesExpanded])
-
-  const toggleSources = () => {
-    const next = !sourcesExpanded
-    setSourcesExpanded(next)
-    localStorage.setItem('llmwiki:sources-expanded', String(next))
-  }
+  const toggleSources = () => setSourcesExpanded((prev) => !prev)
 
   const sourceTree = React.useMemo(() => buildSourceTree(sourceDocs), [sourceDocs])
 
@@ -205,7 +191,7 @@ export function KBSidenav({
     <div className="h-full flex flex-col border-r border-border">
       {/* Wiki selector */}
       <div className="shrink-0 px-2 pt-2 pb-1">
-        <WikiSelector kbName={kbName} />
+        <WikiSelector kbId={kbId} kbName={kbName} />
       </div>
 
       {/* Search + Upload */}
@@ -284,137 +270,137 @@ export function KBSidenav({
         </CommandList>
       </CommandDialog>
 
-      {/* Wiki + Sources — share remaining space, each scrollable */}
+      {/* Wiki + Sources — flex column, wiki fills when sources collapsed */}
       <div className="flex-1 min-h-0 flex flex-col">
-        {/* Wiki section */}
-        <div className="flex flex-col min-h-0 px-2 pt-1" style={{ maxHeight: '50%' }}>
+        {/* Wiki section — expands when sources collapsed, shrinks to header when sources expanded */}
+        <div className={cn(
+          'flex flex-col px-2 pt-1',
+          sourcesExpanded ? 'shrink-0' : 'flex-1 min-h-0',
+        )}>
           <div className="flex items-center px-2 mb-1 shrink-0">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
               Wiki
             </span>
           </div>
-          {loading ? (
-            <SidenavSkeleton lines={3} />
-          ) : hasWiki ? (
-            <div className="overflow-y-auto no-scrollbar space-y-0.5">
-              {wikiTree.map((node, i) => (
-                <WikiTreeNode
-                  key={node.path ?? node.title ?? i}
-                  node={node}
-                  depth={0}
-                  activePath={wikiActivePath}
-                  onNavigate={onWikiNavigate}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="px-2 py-4 text-center">
-              <BookOpen className="size-6 text-muted-foreground/20 mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground mb-2">No wiki yet</p>
-              <a
-                href="https://claude.ai"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Open Claude
-                <ArrowUpRight className="size-3" />
-              </a>
-            </div>
+          {!sourcesExpanded && (
+            loading ? (
+              <SidenavSkeleton lines={3} />
+            ) : hasWiki ? (
+              <div className="flex-1 overflow-y-auto no-scrollbar space-y-0.5">
+                {wikiTree.map((node, i) => (
+                  <WikiTreeNode
+                    key={node.path ?? node.title ?? i}
+                    node={node}
+                    depth={0}
+                    activePath={wikiActivePath}
+                    onNavigate={onWikiNavigate}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="px-2 py-4 text-center">
+                <BookOpen className="size-6 text-muted-foreground/20 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground mb-2">No wiki yet</p>
+                <a
+                  href="https://claude.ai"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Open Claude
+                  <ArrowUpRight className="size-3" />
+                </a>
+              </div>
+            )
           )}
         </div>
 
-        {/* Sources section */}
+        {/* Sources section — pinned at bottom, collapsed by default */}
         <div
-          className="flex-1 min-h-0 flex flex-col px-2 mt-2"
+          className={cn(
+            'flex flex-col px-2',
+            sourcesExpanded ? 'flex-1 min-h-0' : 'shrink-0',
+          )}
           onContextMenu={handleSourcesAreaContext}
         >
-        <div className="flex items-center shrink-0">
-          <button
-            onClick={toggleSources}
-            className="flex items-center gap-1 px-2 py-1 flex-1 text-left cursor-pointer group"
-          >
-            <ChevronRight
-              className={cn(
-                'size-3 text-muted-foreground/40 transition-transform duration-150',
-                sourcesExpanded && 'rotate-90',
-              )}
-            />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 group-hover:text-muted-foreground transition-colors">
-              Sources
-            </span>
-            {sourceDocs.length > 0 && (
-              <span className="text-[10px] text-muted-foreground/30 ml-1">
-                {sourceDocs.length}
+          <div className="flex items-center shrink-0">
+            <button
+              onClick={toggleSources}
+              className="flex items-center gap-1 px-2 py-1 flex-1 text-left cursor-pointer group"
+            >
+              <ChevronRight
+                className={cn(
+                  'size-3 text-muted-foreground/40 transition-transform duration-150',
+                  sourcesExpanded && 'rotate-90',
+                )}
+              />
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 group-hover:text-muted-foreground transition-colors">
+                Sources
               </span>
-            )}
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="p-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent transition-colors cursor-pointer mr-1">
-                <Plus className="size-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="bottom">
-              <DropdownMenuItem onClick={onCreateNote}>
-                <NotepadText className="size-3.5 mr-2" />
-                New Note
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFolderDialogOpen(true)}>
-                <Folder className="size-3.5 mr-2" />
-                New Folder
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onUpload}>
-                <Upload className="size-3.5 mr-2" />
-                Upload Files
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        {sourcesExpanded && (
-          <div className="flex-1 overflow-y-auto no-scrollbar mt-0.5">
-            <div className="space-y-0.5">
-              {loading ? (
-                <SidenavSkeleton lines={6} />
-              ) : sourceTree.length > 0 ? (
-                sourceTree.map((node, i) => (
-                  <SourceTreeNode
-                    key={node.doc?.id ?? node.name ?? i}
-                    node={node}
-                    depth={0}
-                    activeDocId={activeSourceDocId}
-                    parentPath="/"
-                    onSelect={onSourceSelect}
-                    onDelete={onDeleteDocument}
-                    onRename={onRenameDocument}
-                    onMove={onMoveDocument}
-                    selectedIds={selectedIds}
-                    onMultiSelect={onSelect}
-                  />
-                ))
-              ) : (
-                <div className="px-2 py-4 text-center">
-                  <p className="text-xs text-muted-foreground/40 mb-2">No sources yet</p>
-                  <button
-                    onClick={onUpload}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    <Upload className="size-3" />
-                    Upload files
-                  </button>
-                </div>
+              {sourceDocs.length > 0 && (
+                <span className="text-[10px] text-muted-foreground/30 ml-1">
+                  {sourceDocs.length}
+                </span>
               )}
-              {sourceDocs.length > 8 && (
-                <button
-                  onClick={() => setAllSourcesOpen(true)}
-                  className="w-full px-2 py-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer text-center"
-                >
-                  View all {sourceDocs.length} sources
+            </button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="p-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent transition-colors cursor-pointer mr-1">
+                  <Plus className="size-3" />
                 </button>
-              )}
-            </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="bottom">
+                <DropdownMenuItem onClick={onCreateNote}>
+                  <NotepadText className="size-3.5 mr-2" />
+                  New Note
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setFolderDialogOpen(true)}>
+                  <Folder className="size-3.5 mr-2" />
+                  New Folder
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={onUpload}>
+                  <Upload className="size-3.5 mr-2" />
+                  Upload Files
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        )}
+          {sourcesExpanded && (
+            <div className="flex-1 overflow-y-auto no-scrollbar mt-0.5">
+              <div className="space-y-0.5">
+                {loading ? (
+                  <SidenavSkeleton lines={6} />
+                ) : sourceTree.length > 0 ? (
+                  sourceTree.map((node, i) => (
+                    <SourceTreeNode
+                      key={node.doc?.id ?? node.name ?? i}
+                      node={node}
+                      depth={0}
+                      activeDocId={activeSourceDocId}
+                      parentPath="/"
+                      onSelect={onSourceSelect}
+                      onDelete={onDeleteDocument}
+                      onRename={onRenameDocument}
+                      onMove={onMoveDocument}
+                      selectedIds={selectedIds}
+                      onMultiSelect={onSelect}
+                    />
+                  ))
+                ) : (
+                  <div className="px-2 py-4 text-center">
+                    <p className="text-xs text-muted-foreground/40 mb-2">No sources yet</p>
+                    <button
+                      onClick={onUpload}
+                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
+                      <Upload className="size-3" />
+                      Upload files
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -564,7 +550,7 @@ function WikiTreeNode({
     <div>
       <div
         className={cn(
-          'flex items-center gap-0.5 w-full text-left text-xs rounded-md px-2 py-1 transition-colors',
+          'flex items-center gap-1.5 w-full text-left text-[13px] rounded-md px-2 py-1.5 transition-colors',
           isActive
             ? 'bg-accent text-foreground font-medium'
             : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
@@ -680,7 +666,7 @@ function SourceTreeNode({
             if (docId) onMove(docId, folderPath)
           }}
           className={cn(
-            'flex items-center gap-1.5 w-full text-left text-xs rounded-md px-2 py-1 transition-colors cursor-pointer',
+            'flex items-center gap-1.5 w-full text-left text-[13px] rounded-md px-2 py-1.5 transition-colors cursor-pointer',
             dragOver
               ? 'bg-primary/10 ring-1 ring-primary'
               : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
@@ -756,7 +742,7 @@ function SourceTreeNode({
         }
       }}
       className={cn(
-        'flex items-center gap-1.5 w-full text-left text-xs rounded-md px-2 py-1 transition-colors cursor-pointer group',
+        'flex items-center gap-1.5 w-full text-left text-[13px] rounded-md px-2 py-1.5 transition-colors cursor-pointer group',
         isMultiSelected
           ? 'bg-primary/10 text-foreground ring-1 ring-primary/30'
           : isActive

@@ -2,20 +2,27 @@
 
 import * as React from 'react'
 import { useRouter } from 'next/navigation'
-import { ChevronsUpDown, Plus } from 'lucide-react'
+import { ChevronsUpDown, Plus, Pencil, Trash2 } from 'lucide-react'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import { Command, CommandInput, CommandList, CommandItem, CommandEmpty, CommandSeparator } from '@/components/ui/command'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { useKBStore } from '@/stores'
 
-export function WikiSelector({ kbName }: { kbName: string }) {
+export function WikiSelector({ kbName, kbId }: { kbName: string; kbId: string }) {
   const router = useRouter()
   const knowledgeBases = useKBStore((s) => s.knowledgeBases)
   const createKB = useKBStore((s) => s.createKB)
+  const renameKB = useKBStore((s) => s.renameKB)
+  const deleteKB = useKBStore((s) => s.deleteKB)
   const [open, setOpen] = React.useState(false)
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false)
+  const [renameDialogOpen, setRenameDialogOpen] = React.useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [newName, setNewName] = React.useState('')
+  const [renameName, setRenameName] = React.useState('')
   const [creating, setCreating] = React.useState(false)
+  const [renaming, setRenaming] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
 
   const handleCreate = async () => {
     if (!newName.trim()) return
@@ -29,6 +36,34 @@ export function WikiSelector({ kbName }: { kbName: string }) {
       // error handled by store
     } finally {
       setCreating(false)
+    }
+  }
+
+  const handleRename = async () => {
+    if (!renameName.trim() || renameName.trim() === kbName) return
+    setRenaming(true)
+    try {
+      await renameKB(kbId, renameName.trim())
+      setRenameDialogOpen(false)
+      const updated = useKBStore.getState().knowledgeBases.find((kb) => kb.id === kbId)
+      if (updated) router.replace(`/wikis/${updated.slug}`)
+    } catch {
+      // error handled by store
+    } finally {
+      setRenaming(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await deleteKB(kbId)
+      setDeleteDialogOpen(false)
+      router.push('/wikis')
+    } catch {
+      // error handled by store
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -64,6 +99,27 @@ export function WikiSelector({ kbName }: { kbName: string }) {
               <CommandItem
                 onSelect={() => {
                   setOpen(false)
+                  setRenameName(kbName)
+                  setRenameDialogOpen(true)
+                }}
+              >
+                <Pencil className="size-3.5 mr-2" />
+                Rename
+              </CommandItem>
+              <CommandItem
+                onSelect={() => {
+                  setOpen(false)
+                  setDeleteDialogOpen(true)
+                }}
+                className="text-destructive"
+              >
+                <Trash2 className="size-3.5 mr-2" />
+                Delete
+              </CommandItem>
+              <CommandSeparator />
+              <CommandItem
+                onSelect={() => {
+                  setOpen(false)
                   setCreateDialogOpen(true)
                 }}
               >
@@ -95,6 +151,56 @@ export function WikiSelector({ kbName }: { kbName: string }) {
               className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 cursor-pointer"
             >
               {creating ? 'Creating...' : 'Create'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Rename wiki</DialogTitle>
+          </DialogHeader>
+          <input
+            value={renameName}
+            onChange={(e) => setRenameName(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleRename()}
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+            autoFocus
+          />
+          <DialogFooter>
+            <button
+              onClick={handleRename}
+              disabled={renaming || !renameName.trim() || renameName.trim() === kbName}
+              className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            >
+              {renaming ? 'Renaming...' : 'Rename'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete wiki</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will permanently delete <strong>{kbName}</strong> and all its documents. This cannot be undone.
+          </p>
+          <DialogFooter>
+            <button
+              onClick={() => setDeleteDialogOpen(false)}
+              className="rounded-lg border border-input px-4 py-2 text-sm font-medium hover:bg-accent cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="rounded-lg bg-destructive px-4 py-2 text-sm font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-50 cursor-pointer"
+            >
+              {deleting ? 'Deleting...' : 'Delete'}
             </button>
           </DialogFooter>
         </DialogContent>
