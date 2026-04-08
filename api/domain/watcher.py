@@ -34,6 +34,43 @@ TEXT_EXTENSIONS = frozenset({
 
 COOLDOWN_SECONDS = 2.0
 
+_ignore_patterns: list[str] | None = None
+
+
+def _load_ignore_patterns(workspace: Path) -> list[str]:
+    """Load ignore patterns from .llmwikiignore, falling back to .gitignore."""
+    global _ignore_patterns
+    if _ignore_patterns is not None:
+        return _ignore_patterns
+
+    patterns = []
+    for ignore_file in (".llmwikiignore", ".gitignore"):
+        p = workspace / ignore_file
+        if p.is_file():
+            for line in p.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    patterns.append(line)
+            break  # Use first found, don't merge
+    _ignore_patterns = patterns
+    return patterns
+
+
+def _matches_ignore_pattern(relative: str, patterns: list[str]) -> bool:
+    """Simple gitignore-style matching (directory and glob patterns)."""
+    from fnmatch import fnmatch
+    for pattern in patterns:
+        pattern = pattern.rstrip("/")
+        if fnmatch(relative, pattern):
+            return True
+        if fnmatch(relative, f"**/{pattern}"):
+            return True
+        # Check if any path component matches a directory pattern
+        for part in relative.split("/"):
+            if fnmatch(part, pattern):
+                return True
+    return False
+
 # Paths written by the app — skip re-indexing for these
 _recently_written: dict[str, float] = {}
 
@@ -53,16 +90,25 @@ def _is_recently_written(path: str) -> bool:
 
 
 def _should_ignore(path: Path, workspace: Path) -> bool:
-    """Check if a path should be ignored based on directory rules."""
+    """Check if a path should be ignored based on directory rules + ignore files."""
     try:
         relative = path.relative_to(workspace)
     except ValueError:
         return True
 
+    relative_str = str(relative)
     parts = relative.parts
+
+    # Built-in ignores
     for part in parts:
         if part in IGNORE_DIRS or part.startswith("."):
             return True
+
+    # User-configured ignore patterns
+    patterns = _load_ignore_patterns(workspace)
+    if patterns and _matches_ignore_pattern(relative_str, patterns):
+        return True
+
     return False
 
 

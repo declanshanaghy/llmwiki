@@ -58,10 +58,11 @@ async def upload_file(
     source_kind = "wiki" if relative.startswith("wiki/") else "source"
     content_hash = hashlib.sha256(content_bytes).hexdigest()
 
-    # Read text content for indexable types
+    # Read text content for simple indexable types (not HTML — that goes through webmd)
     text_content = None
-    text_types = {"md", "txt", "csv", "html", "svg", "json", "xml"}
-    if ext in text_types:
+    simple_text_types = {"md", "txt", "csv", "svg", "json", "xml"}
+    needs_processing = ext in {"pdf", "pptx", "ppt", "docx", "doc", "xlsx", "xls", "html", "htm"}
+    if ext in simple_text_types:
         try:
             text_content = content_bytes.decode("utf-8", errors="replace")
         except Exception:
@@ -102,8 +103,8 @@ async def upload_file(
         kb_id = ws[0] if ws else ""
         chunks = chunk_text(text_content)
         await chunk_repo.store(doc_id, user_id, kb_id, chunks)
-    else:
-        # Non-text file: process in background (PDF extraction, spreadsheet parsing, etc.)
+    elif needs_processing:
+        # PDF, Office, spreadsheet, HTML: process in background
         import asyncio
         from pathlib import Path as P
         from domain.local_processor import process_document

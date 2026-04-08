@@ -79,14 +79,13 @@ def register(mcp: FastMCP) -> None:
             header += f" | Pages: {doc['page_count']}"
         header += f"\n[View]({link})\n\n---\n\n"
 
-        # Image files
+        # Image files — load from workspace-relative path
         image_types = {"png", "jpg", "jpeg", "webp", "gif"}
         if file_type in image_types:
             if not include_images:
                 return header + "(Image file — set `include_images=true` to view)"
-            user_id_str = str(doc.get("user_id", user_id))
-            doc_id = str(doc["id"])
-            img_bytes = await load_bytes(f"{user_id_str}/{doc_id}/source.{file_type}")
+            relative = doc.get("relative_path") or (doc["path"].rstrip("/") + "/" + doc["filename"]).lstrip("/")
+            img_bytes = await load_bytes(relative)
             if img_bytes:
                 fmt = "jpeg" if file_type in ("jpg", "jpeg") else file_type
                 return [_text(header), _image(img_bytes, fmt)]
