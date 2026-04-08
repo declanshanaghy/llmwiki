@@ -30,7 +30,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def _init_workspace(workspace_path: str) -> None:
-    """Initialize workspace: create dirs, SQLite, default user + workspace row."""
+    """Initialize workspace: create dirs, SQLite, default workspace row, scaffold wiki files."""
     ws = Path(workspace_path).resolve()
 
     (ws / "wiki").mkdir(parents=True, exist_ok=True)
@@ -66,6 +66,7 @@ async def _init_workspace(workspace_path: str) -> None:
             ["log"],
         )
 
+        # Write actual files to disk
         overview_path = ws / "wiki" / "overview.md"
         if not overview_path.exists():
             overview_path.write_text(
@@ -82,46 +83,17 @@ async def _init_workspace(workspace_path: str) -> None:
         logger.info("Workspace ready: %s", ws)
 
 
-def _inject_local_db(workspace_path: str) -> None:
-    """Replace the 'db' module with our SQLite compat layer before tools import it.
-
-    This is a temporary bridge — the existing tools import from 'db' and use
-    Postgres-style SQL. The compat layer translates $1→? params and handles
-    basic syntax differences. Long-term, tools should call high-level query
-    functions from infra.db.sqlite instead of raw SQL.
-    """
-    from infra.db import local_compat
-    sys.modules["db"] = local_compat
-
-    # Also patch helpers to use local storage
-    from infra.storage import local as local_storage
-    import tools.helpers as helpers
-    helpers._get_s3_session = lambda: None
-    _original_load_s3 = helpers.load_s3_bytes
-
-    async def _load_local(key: str) -> bytes | None:
-        return await local_storage.load_bytes(key)
-
-    helpers.load_s3_bytes = _load_local
-
-
 def main():
     args = _parse_args()
     workspace = args.workspace_flag or args.workspace
     workspace = str(Path(workspace).resolve())
 
-    # Mark as local_server mode (for get_user_id bypass)
+    # Mark as local_server mode (for get_user_id bypass in helpers.py)
     sys.modules["local_server"] = sys.modules[__name__]
 
     # Initialize workspace synchronously
     loop = asyncio.new_event_loop()
     loop.run_until_complete(_init_workspace(workspace))
-
-    # Inject local DB compat layer BEFORE tool imports
-    from infra.db import sqlite as local_db
-    from infra.db.local_compat import set_connection
-    set_connection(loop.run_until_complete(local_db.get_db()))
-    _inject_local_db(workspace)
 
     from mcp.server.fastmcp import FastMCP
 
@@ -134,7 +106,9 @@ def main():
         ),
     )
 
-    from tools import register
+    # Register LOCAL tools — these use SQLite + filesystem directly.
+    # No monkey-patching, no compat shims, no hosted schema assumptions.
+    from local.tools import register
     register(mcp)
 
     @mcp.tool(name="ping", description="Test connectivity")
