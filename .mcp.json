@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "llmwiki": {
+      "command": "/Users/dshanaghy/src/bitbucket.org/cribl/llm-wiki/mcp/.venv/bin/python",
+      "args": ["/Users/dshanaghy/src/bitbucket.org/cribl/llm-wiki/mcp/local_server.py"],
+      "env": {
+        "DATABASE_URL": "postgresql://supabase_admin:postgres@localhost:54322/postgres",
+        "SUPABASE_URL": "http://localhost:54321",
+        "SUPAVAULT_USER_ID": "d5a33fd2-d62d-49d3-b379-94449fc13d25",
+        "APP_URL": "http://localhost:3000"
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 'use client'
 
 import * as React from 'react'
-import { Loader2, FileText } from 'lucide-react'
+import { Loader2, FileText, ExternalLink } from 'lucide-react'
 import { useUserStore } from '@/stores'
 import { apiFetch } from '@/lib/api'
 import dynamic from 'next/dynamic'
@@ -67,7 +67,7 @@ export function ImageViewer({ documentId, title }: { documentId: string; title: 
   )
 }
 
-export function HtmlDocViewer({ documentId, title }: { documentId: string; title: string }) {
+export function HtmlDocViewer({ documentId, title, sourceUrl }: { documentId: string; title: string; sourceUrl?: string | null }) {
   const { url, error } = useDocumentUrl(documentId)
   if (error) return <ErrorMessage message="Failed to load HTML" />
   if (!url) return <LoadingSpinner />
@@ -76,6 +76,18 @@ export function HtmlDocViewer({ documentId, title }: { documentId: string; title
     <div className="h-full flex flex-col">
       <div className="flex items-center px-4 py-1.5 border-b border-border text-xs text-muted-foreground shrink-0">
         <span className="truncate text-foreground">{title}</span>
+        <span className="flex-1" />
+        {sourceUrl && (
+          <a
+            href={sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/40 hover:text-muted-foreground transition-colors shrink-0"
+          >
+            <ExternalLink className="size-3" />
+            Open in Confluence
+          </a>
+        )}
       </div>
       <HtmlViewer fileUrl={url} className="flex-1" />
     </div>

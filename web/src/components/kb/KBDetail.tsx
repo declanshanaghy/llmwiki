@@ -790,7 +790,7 @@ export function KBDetail({ kbId, kbName }: Props) {
             ) : ['png', 'jpg', 'jpeg', 'webp', 'gif'].includes(activeSourceDoc.file_type) ? (
               <ImageViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} />
             ) : ['html', 'htm'].includes(activeSourceDoc.file_type) ? (
-              <HtmlDocViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} />
+              <HtmlDocViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} sourceUrl={activeSourceDoc.url} />
             ) : ['xlsx', 'xls', 'csv'].includes(activeSourceDoc.file_type) ? (
               <ContentViewer documentId={activeSourceDocId} title={activeSourceDoc.title || activeSourceDoc.filename} fileType={activeSourceDoc.file_type} />
             ) : (

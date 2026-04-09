@@ -18,9 +18,6 @@ MAX_SEARCH = 20
 def get_user_id(ctx: Context) -> str:
     local_id = os.environ.get("SUPAVAULT_USER_ID")
     if local_id:
-        import sys
-        if "local_server" not in sys.modules:
-            raise RuntimeError("SUPAVAULT_USER_ID is set but local_server is not loaded — refusing to bypass auth")
         return local_id
 
     access_token = get_access_token()

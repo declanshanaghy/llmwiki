@@ -141,22 +141,66 @@ async def _store_chunks_on_conn(
     if not chunks:
         return
 
+    # Force-split any chunks that exceed the DB limit (10k chars)
+    MAX_CHUNK_CONTENT = 9900
+    safe_chunks: list[Chunk] = []
+    for c in chunks:
+        if len(c.content) <= MAX_CHUNK_CONTENT:
+            safe_chunks.append(c)
+        else:
+            # Split oversized chunk on sentence boundaries
+            text = c.content
+            while text:
+                if len(text) <= MAX_CHUNK_CONTENT:
+                    safe_chunks.append(Chunk(
+                        index=len(safe_chunks), content=text, page=c.page,
+                        start_char=c.start_char, token_count=_estimate_tokens(text),
+                        header_breadcrumb=c.header_breadcrumb,
+                    ))
+                    break
+                # Find a sentence break near the limit
+                cut = text.rfind('. ', 0, MAX_CHUNK_CONTENT)
+                if cut < MAX_CHUNK_CONTENT // 2:
+                    cut = text.rfind('\n', 0, MAX_CHUNK_CONTENT)
+                if cut < MAX_CHUNK_CONTENT // 2:
+                    cut = MAX_CHUNK_CONTENT
+                split_at = cut + 2 if text[cut:cut+2] == '. ' else cut + 1
+                part = text[:split_at].strip()
+                if part:
+                    safe_chunks.append(Chunk(
+                        index=len(safe_chunks), content=part, page=c.page,
+                        start_char=c.start_char, token_count=_estimate_tokens(part),
+                        header_breadcrumb=c.header_breadcrumb,
+                    ))
+                text = text[split_at:].strip()
+
     await conn.executemany(
         "INSERT INTO document_chunks "
         "(document_id, user_id, knowledge_base_id, chunk_index, content, page, start_char, token_count, header_breadcrumb) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
         [
             (document_id, user_id, knowledge_base_id, c.index, c.content, c.page, c.start_char, c.token_count, c.header_breadcrumb)
-            for c in chunks
+            for c in safe_chunks
         ],
     )
     logger.info("Stored %d chunks for doc %s", len(chunks), document_id[:8])
 
 
 def _split_paragraphs(text: str) -> list[str]:
-    """Split on double newlines, preserving paragraph structure."""
+    """Split on double newlines, then single newlines for long blocks."""
     parts = re.split(r'\n\s*\n', text)
-    return [p.strip() for p in parts if p.strip()]
+    result = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        # If a block is too large, split on single newlines
+        if len(p) > 2000:
+            sub = [s.strip() for s in p.split('\n') if s.strip()]
+            result.extend(sub)
+        else:
+            result.append(p)
+    return result
 
 
 def _get_overlap(blocks: list[str], target_tokens: int) -> tuple[list[str], int]:
