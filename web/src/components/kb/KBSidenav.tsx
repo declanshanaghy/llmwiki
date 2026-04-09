@@ -5,7 +5,7 @@ import {
   ChevronRight, FileText, FolderOpen, NotepadText, Folder, Loader2,
   Upload, BookOpen, Plus, Search as SearchIcon, Globe,
   Image, Sheet, Presentation, FileCode,
-  Lightbulb, Landmark, ScrollText,
+  Lightbulb, Landmark, ScrollText, Eye,
 } from 'lucide-react'
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -17,7 +17,6 @@ import {
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { SourceContextMenu, SourceAreaContextMenu } from '@/components/kb/ContextMenus'
-import { SourceIngestionDropdown } from '@/components/kb/SourceIngestionMenu'
 import { WikiSelector } from '@/components/kb/WikiSelector'
 import { SidenavUserMenu } from '@/components/kb/SidenavUserMenu'
 import { apiFetch } from '@/lib/api'
@@ -167,17 +166,33 @@ export function KBSidenav({
   selectedIds = new Set(),
   onSelect,
 }: KBSidenavProps) {
-  // Tab state — default to wiki, auto-switch based on selection
-  const [sidebarTab, setSidebarTab] = React.useState<'wiki' | 'sources'>(() => {
+  // Tab state — synced with URL ?tab= param
+  const [sidebarTab, setSidebarTabRaw] = React.useState<'wiki' | 'sources'>(() => {
+    if (typeof window === 'undefined') return 'wiki'
+    const params = new URLSearchParams(window.location.search)
+    const tab = params.get('tab')
+    if (tab === 'sources') return 'sources'
     if (activeSourceDocId) return 'sources'
     return 'wiki'
   })
+
+  const setSidebarTab = React.useCallback((tab: 'wiki' | 'sources') => {
+    setSidebarTabRaw(tab)
+    if (typeof window === 'undefined') return
+    const url = new URL(window.location.href)
+    if (tab === 'sources') {
+      url.searchParams.set('tab', 'sources')
+    } else {
+      url.searchParams.delete('tab')
+    }
+    window.history.replaceState({}, '', url.pathname + url.search)
+  }, [])
 
   // Auto-switch tab when selection changes
   React.useEffect(() => {
     if (activeSourceDocId) setSidebarTab('sources')
     else if (wikiActivePath) setSidebarTab('wiki')
-  }, [activeSourceDocId, wikiActivePath])
+  }, [activeSourceDocId, wikiActivePath, setSidebarTab])
 
   const [sourcesExpanded, setSourcesExpanded] = React.useState(true)
 
@@ -252,14 +267,13 @@ export function KBSidenav({
           <span className="flex-1 text-left">Search</span>
           <kbd className="text-[10px] text-muted-foreground/30 bg-muted px-1 rounded">⌘K</kbd>
         </button>
-        <SourceIngestionDropdown onUpload={onUpload} onConfluenceImport={onConfluenceImport}>
-          <button
-            className="flex items-center justify-center px-2.5 py-1.5 text-muted-foreground/50 hover:text-muted-foreground border border-border hover:bg-accent rounded-md transition-colors cursor-pointer"
-            title="Add sources"
-          >
-            <Upload className="size-3" />
-          </button>
-        </SourceIngestionDropdown>
+        <button
+          onClick={onConfluenceImport}
+          className="flex items-center justify-center px-2.5 py-1.5 text-muted-foreground/50 hover:text-muted-foreground border border-border hover:bg-accent rounded-md transition-colors cursor-pointer"
+          title="Import from Confluence"
+        >
+          <Globe className="size-3" />
+        </button>
       </div>
 
       {/* Search palette — scoped to active tab */}
@@ -313,10 +327,6 @@ export function KBSidenav({
             <CommandItem onSelect={() => { setSearchOpen(false); setFolderDialogOpen(true) }}>
               <Folder className="size-3.5 mr-2 opacity-50" />
               New Folder
-            </CommandItem>
-            <CommandItem onSelect={() => { setSearchOpen(false); onUpload() }}>
-              <Upload className="size-3.5 mr-2 opacity-50" />
-              Upload Files
             </CommandItem>
           </CommandGroup>
         </CommandList>
@@ -399,10 +409,6 @@ export function KBSidenav({
                     <Folder className="size-3.5 mr-2" />
                     New Folder
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={onUpload}>
-                    <Upload className="size-3.5 mr-2" />
-                    Upload Files
-                  </DropdownMenuItem>
                   <DropdownMenuItem onClick={onConfluenceImport}>
                     <Globe className="size-3.5 mr-2" />
                     Import from Confluence
@@ -452,7 +458,6 @@ export function KBSidenav({
           setAreaContextOpen(false)
           setFolderDialogOpen(true)
         }}
-        onUpload={() => { setAreaContextOpen(false); onUpload() }}
         onClose={() => setAreaContextOpen(false)}
       />
 
@@ -546,7 +551,7 @@ function WikiTreeNode({
         className={cn(
           'flex items-center gap-0.5 w-full text-left text-xs rounded-md px-2 py-1 transition-colors',
           isActive
-            ? 'bg-accent text-foreground font-medium'
+            ? 'bg-[hsl(var(--accent-blue)/0.15)] text-foreground font-medium ring-1 ring-[hsl(var(--accent-blue)/0.3)]'
             : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
         )}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
@@ -573,6 +578,7 @@ function WikiTreeNode({
           {wikiNodeIcon(node, depth)}
           <span className="truncate">{node.title}</span>
         </button>
+        {isActive && <Eye className="size-3 shrink-0 text-[hsl(var(--accent-blue))] opacity-60" />}
       </div>
       {hasChildren && (expanded || hasActiveChild) && (
         <div className="mt-0.5">
@@ -745,7 +751,7 @@ function SourceTreeNode({
           isMultiSelected
             ? 'bg-primary/10 text-foreground ring-1 ring-primary/30'
             : isActive
-              ? 'bg-accent text-foreground font-medium'
+              ? 'bg-[hsl(var(--accent-blue)/0.15)] text-foreground font-medium ring-1 ring-[hsl(var(--accent-blue)/0.3)]'
               : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
         )}
         style={{ paddingLeft: `${depth * 12 + 8 + (hasChildren ? 0 : 16)}px` }}
@@ -787,6 +793,7 @@ function SourceTreeNode({
           return <NotepadText className="size-3 shrink-0 opacity-50" />
         })()}
         <span className="truncate flex-1">{node.name}</span>
+        {isActive && <Eye className="size-3 shrink-0 text-[hsl(var(--accent-blue))] opacity-60" />}
         <SourceContextMenu
           open={contextOpen}
           x={contextPos?.x ?? 0}

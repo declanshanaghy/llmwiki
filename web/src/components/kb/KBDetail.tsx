@@ -1,8 +1,8 @@
 'use client'
 
 import * as React from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { Upload as UploadIcon, BookOpen, Loader2 } from 'lucide-react'
+import { useSearchParams } from 'next/navigation'
+import { BookOpen, Loader2 } from 'lucide-react'
 import * as tus from 'tus-js-client'
 import { useUserStore } from '@/stores'
 import { useKBDocuments } from '@/hooks/useKBDocuments'
@@ -149,7 +149,6 @@ type Props = {
 }
 
 export function KBDetail({ kbId, kbName }: Props) {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const token = useUserStore((s) => s.accessToken)
   const userId = useUserStore((s) => s.user?.id)
@@ -311,22 +310,51 @@ export function KBDetail({ kbId, kbName }: Props) {
     setUrlRestored(true)
   }, [docParam, pageParam, loading, documents, urlRestored])
 
-  // Sync selection to URL
+  // Sync selection to URL via pushState (preserves browser history)
   const updateUrl = React.useCallback((selection: { docNumber?: number | null; pagePath?: string | null }) => {
     const { docNumber = null, pagePath = null } = selection
     const url = new URL(window.location.href)
     if (docNumber) {
       url.searchParams.set('doc', String(docNumber))
+      url.searchParams.delete('page')
+      url.searchParams.set('tab', 'sources')
+    } else if (pagePath) {
+      url.searchParams.set('page', pagePath)
+      url.searchParams.delete('doc')
+      url.searchParams.delete('tab')
     } else {
       url.searchParams.delete('doc')
-    }
-    if (pagePath) {
-      url.searchParams.set('page', pagePath)
-    } else {
       url.searchParams.delete('page')
     }
-    router.replace(url.pathname + url.search, { scroll: false })
-  }, [router])
+    window.history.pushState({}, '', url.pathname + url.search)
+  }, [])
+
+  // Handle browser back/forward
+  React.useEffect(() => {
+    const handlePopState = () => {
+      if (!documents.length) return
+      const params = new URLSearchParams(window.location.search)
+      const doc = params.get('doc')
+      const page = params.get('page')
+
+      if (doc) {
+        const num = parseInt(doc, 10)
+        const match = documents.find((d) => d.document_number === num)
+        if (match) {
+          setActiveSourceDocId(match.id)
+          setWikiActivePath(null)
+        }
+      } else if (page) {
+        setActiveSourceDocId(null)
+        setWikiActivePath(page.replace(/^\/wiki\/?/, ''))
+      } else {
+        // No params — go to wiki default
+        setActiveSourceDocId(null)
+      }
+    }
+    window.addEventListener('popstate', handlePopState)
+    return () => window.removeEventListener('popstate', handlePopState)
+  }, [documents])
 
   const handleWikiSelect = React.useCallback((path: string) => {
     setWikiActivePath(path)
@@ -345,12 +373,17 @@ export function KBDetail({ kbId, kbName }: Props) {
     // Source may include page ref like "file.pdf, p.3" — strip it
     const filename = source.replace(/,\s*p\.?\s*.+$/, '').trim()
     const lower = filename.toLowerCase()
+    // Also create URL-encoded version for matching against DB filenames
+    const encoded = lower.replace(/ /g, '+')
 
     const match = sourceDocs.find((d) => {
       const fn = d.filename.toLowerCase()
+      const fnDecoded = decodeURIComponent(fn.replace(/\+/g, ' '))
       const title = (d.title || '').toLowerCase()
       return (
         fn === lower ||
+        fn === encoded ||
+        fnDecoded === lower ||
         title === lower ||
         fn === lower + '.md' ||
         fn.replace(/\.md$/, '') === lower
@@ -685,35 +718,6 @@ export function KBDetail({ kbId, kbName }: Props) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [])
 
-  // File drag-and-drop
-  const [fileDragOver, setFileDragOver] = React.useState(false)
-  const dragCounterRef = React.useRef(0)
-
-  const handleFileDragEnter = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-llmwiki-item')) return
-    e.preventDefault()
-    dragCounterRef.current++
-    if (dragCounterRef.current === 1) setFileDragOver(true)
-  }
-  const handleFileDragLeave = (e: React.DragEvent) => {
-    e.preventDefault()
-    dragCounterRef.current--
-    if (dragCounterRef.current === 0) setFileDragOver(false)
-  }
-  const handleFileDragOver = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-llmwiki-item')) return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'copy'
-  }
-  const handleFileDrop = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('application/x-llmwiki-item')) return
-    e.preventDefault()
-    dragCounterRef.current = 0
-    setFileDragOver(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) uploadFiles(files)
-  }
-
   const showMainLoading =
     loading ||
     !selectionHydrated ||
@@ -722,23 +726,7 @@ export function KBDetail({ kbId, kbName }: Props) {
     (!activeSourceDocId && !!wikiActivePath && pageLoadedPath !== wikiActivePath)
 
   return (
-    <div
-      className="flex flex-col h-full relative"
-      onDragEnter={handleFileDragEnter}
-      onDragLeave={handleFileDragLeave}
-      onDragOver={handleFileDragOver}
-      onDrop={handleFileDrop}
-    >
-      {fileDragOver && (
-        <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-          <div className="flex flex-col items-center gap-3 border-2 border-dashed border-primary rounded-xl px-12 py-10">
-            <UploadIcon className="size-8 text-primary" />
-            <p className="text-sm font-medium text-primary">Drop files to upload</p>
-            <p className="text-xs text-muted-foreground">PDF, Word, PowerPoint, images, and more</p>
-          </div>
-        </div>
-      )}
-
+    <div className="flex flex-col h-full relative">
       <div className="flex-1 overflow-hidden flex">
         <div className="w-56 shrink-0">
           <KBSidenav
@@ -818,7 +806,6 @@ export function KBDetail({ kbId, kbName }: Props) {
                 </p>
               </div>
               <SourceIngestionButtons
-                onUpload={handleUploadClick}
                 onConfluenceImport={() => { setConfluenceDialogUrl(undefined); setConfluenceDialogChildren(undefined); setConfluenceDialogOpen(true) }}
               />
             </div>

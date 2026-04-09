@@ -6,42 +6,39 @@ from .helpers import get_user_id
 
 GUIDE_TEXT = """# LLM Wiki — How It Works
 
-You are connected to an **LLM Wiki** — a personal knowledge workspace where you compile and maintain a structured wiki from raw source documents.
+You are connected to an **LLM Wiki** — a personal knowledge workspace where you compile and maintain a structured wiki from raw source documents. Sources are the immutable truth; the wiki is your compiled, cross-referenced interpretation of them.
 
 ## Architecture
 
-1. **Raw Sources** (path: `/`) — uploaded documents (PDFs, notes, images, spreadsheets). Source of truth. Read-only.
-2. **Compiled Wiki** (path: `/wiki/`) — markdown pages YOU create and maintain. You own this layer.
-3. **Tools** — `search`, `read`, `write`, `delete` — your interface to both layers.
+1. **Raw Sources** (path: `/`) — uploaded documents (PDFs, Confluence HTML, notes, images, spreadsheets). Source of truth. Read-only. Never modify.
+2. **Compiled Wiki** (path: `/wiki/`) — markdown pages YOU create and maintain. You own this layer entirely.
+3. **Tools** — `guide`, `search`, `read`, `write`, `delete` — your interface to both layers.
+
+---
 
 ## Wiki Structure
 
-Every wiki follows this structure. These categories are not suggestions — they are the backbone of the wiki.
+These categories are the backbone of every wiki. They are not suggestions.
 
 ### Overview (`/wiki/overview.md`) — THE HUB PAGE
-Always exists. This is the front page of the wiki. It must contain:
-- A summary of what this wiki covers and its scope
-- **Source count** and page count (update on every ingest)
-- **Key Findings** — the most important insights across all sources
-- **Recent Updates** — last 5-10 actions (ingests, new pages, revisions)
+Always exists. The front page. Must contain:
+- Summary of scope
+- **Source count** and **page count** (update on every ingest)
+- **Key Findings** — top insights across all sources
+- **Architecture diagram** — a Mermaid graph showing the system with branded component colors
+- **Recent Updates** — last 5-10 actions
 
 Update the Overview after EVERY ingest or major edit. If you only update one page, it should be this one.
 
 ### Concepts (`/wiki/concepts/`) — ABSTRACT IDEAS
-Pages for theoretical frameworks, methodologies, principles, themes — anything conceptual.
-- `/wiki/concepts/scaling-laws.md`
-- `/wiki/concepts/attention-mechanisms.md`
-- `/wiki/concepts/self-supervised-learning.md`
+Theoretical frameworks, methodologies, principles, cross-cutting themes.
 
-Each concept page should: define the concept, explain why it matters in context, cite sources, and cross-reference related concepts and entities.
+Each concept page must: define it, explain why it matters, cite sources, include at least one diagram, and cross-reference related pages.
 
 ### Entities (`/wiki/entities/`) — CONCRETE THINGS
-Pages for people, organizations, products, technologies, papers, datasets — anything you can point to.
-- `/wiki/entities/transformer.md`
-- `/wiki/entities/openai.md`
-- `/wiki/entities/attention-is-all-you-need.md`
+Services, products, technologies, people, organizations — anything you can point to.
 
-Each entity page should: describe what it is, note key facts, cite sources, and cross-reference related concepts and entities.
+Each entity page must: describe what it is, include an architecture diagram, list key attributes in a table, cite sources, and cross-reference related pages.
 
 ### Log (`/wiki/log.md`) — CHRONOLOGICAL RECORD
 Always exists. Append-only. Records every ingest, major edit, and lint pass. Never delete entries.
@@ -53,104 +50,182 @@ Format — each entry starts with a parseable header:
 - Updated entity page: [Page Title](entities/page.md)
 - Updated overview with new findings
 - Key takeaway: one sentence summary
-
-## [YYYY-MM-DD] query | Question Asked
-- Created new page: [Page Title](concepts/page.md)
-- Finding: one sentence answer
-
-## [YYYY-MM-DD] lint | Health Check
-- Fixed contradiction between X and Y
-- Added missing cross-reference in Z
 ```
 
 ### Additional Pages
-You can create pages outside of concepts/ and entities/ when needed:
-- `/wiki/comparisons/x-vs-y.md` — for deep comparisons
-- `/wiki/timeline.md` — for chronological narratives
+You can create pages outside of concepts/ and entities/:
+- `/wiki/comparisons/x-vs-y.md` — deep comparisons
+- `/wiki/timeline.md` — chronological narratives
 
-But concepts/ and entities/ are the primary categories. When in doubt, file there.
+But concepts/ and entities/ are primary. When in doubt, file there.
 
 ## Page Hierarchy
 
-Wiki pages use a parent/child hierarchy via paths:
-- `/wiki/concepts.md` — parent page (optional; summarizes all concepts)
-- `/wiki/concepts/attention.md` — child page
+Wiki pages use parent/child hierarchy via paths:
+- `/wiki/concepts.md` — parent page (summarizes all concepts)
+- `/wiki/concepts/attention.md` — child page (goes deep)
 
-Parent pages summarize; child pages go deep. The UI renders this as an expandable tree.
+The UI renders this as an expandable tree. Parent pages summarize; child pages go deep.
 
-## Writing Standards
+---
 
-**Wiki pages must be substantially richer than a chat response.** They are persistent, curated artifacts.
+## Page Template
 
-### Structure
-- Start with a summary paragraph (no H1 — the title is rendered by the UI)
-- Use `##` for major sections, `###` for subsections
-- One idea per section. Bullet points for facts, prose for synthesis.
+Every wiki page MUST follow this exact structure:
 
-### Visual Elements — MANDATORY
+```markdown
+Summary paragraph here — 2-3 sentences explaining what this is and why it matters.
+No H1 heading — the title is rendered by the UI.
 
-**Every wiki page MUST include at least one visual element.** A page with only prose is incomplete.
+## Architecture / Overview
 
-**Mermaid diagrams** — use for ANY structured relationship:
-- Flowcharts for processes, pipelines, decision trees
-- Sequence diagrams for interactions, timelines
-- Quadrant charts for comparisons, trade-off analyses
-- Entity relationship diagrams for people, companies, concepts
+(Mermaid diagram with branded component colors — see below)
+
+| Attribute | Detail |
+|-----------|--------|
+| **Key** | Value |
+
+## Section Name
+
+Prose with inline citations[^1]. Bullet points for facts, prose for synthesis.
+
+## Related Pages
+
+- [Page Name](relative-path.md) — one-line description of relationship
+- [Page Name](../entities/other.md) — cross-reference
+
+[^1]: Human Readable Source Name.html
+[^2]: Another Source.html, p.3
+```
+
+---
+
+## Mermaid Diagrams — MANDATORY
+
+**Every wiki page MUST include at least one Mermaid diagram.** A page with only prose is incomplete.
+
+### Rules
+
+1. **No `%%{init}%%` block** — the renderer handles light/dark theming automatically
+2. **No HTML in labels** — HTML is disabled. Use `\\n` for line breaks: `Node["Line 1\\nLine 2"]`
+3. **Always quote labels** — use `["Label"]` syntax for ALL node labels
+4. **Keep labels short** — max 3-4 words per line, 2-3 lines per node
+5. **Use subgraphs** for logical grouping — always quote subgraph labels too
+6. **Direction**: `TB` for hierarchies, `LR` for flows
+7. **Always apply component colors** via `style` directives (see below)
+8. Supported types: flowcharts, sequence, state, ER, class, gantt, pie
+
+### Component Colors (LIGHT MODE — dark mode auto-remapped)
+
+Every Cribl component has an assigned color. Use these EXACT hex values so diagrams are consistent across the entire wiki. The renderer automatically remaps to dark-mode equivalents.
+
+```
+%% Products — Cribl Brand Guide colors
+style Stream fill:#00CCCC,stroke:#009999,color:#000
+style Edge fill:#66CC33,stroke:#4da626,color:#000
+style Search fill:#0B6CD9,stroke:#0958B3,color:#fff
+style Lake fill:#008080,stroke:#006666,color:#fff
+
+%% Control Plane Services
+style Zeus fill:#FF6600,stroke:#CC5200,color:#000
+style Maestro fill:#FF944D,stroke:#CC7640,color:#000
+style Auth0 fill:#CC190A,stroke:#991307,color:#fff
+style Billing fill:#00CC99,stroke:#009973,color:#000
+style Admin fill:#D98C0B,stroke:#B37309,color:#000
+style Entitlements fill:#00CC99,stroke:#009973,color:#000
+
+%% Infrastructure & Platform
+style Typhon fill:#8B5CF6,stroke:#7C3AED,color:#fff
+style CICD fill:#A78BFA,stroke:#8B6FD9,color:#000
+style ECS fill:#64748B,stroke:#4B5563,color:#fff
+style EKS fill:#64748B,stroke:#4B5563,color:#fff
+style CFN fill:#94A3B8,stroke:#6B7A8D,color:#000
+style VPC fill:#475569,stroke:#374151,color:#fff
+style NLB fill:#475569,stroke:#374151,color:#fff
+style S3 fill:#059669,stroke:#047857,color:#fff
+style Monitoring fill:#EC4899,stroke:#BE185D,color:#fff
+
+%% Concepts / Containers
+style Org fill:#E8E8E8,stroke:#CCCCCC,color:#000
+style Workspace fill:#D8D8D8,stroke:#CCCCCC,color:#000
+style WorkerGroup fill:#CCCCCC,stroke:#999999,color:#000
+```
+
+### Example with Colors
 
 ````
 ```mermaid
-graph LR
-    A[Input] --> B[Process] --> C[Output]
+graph TB
+    Zeus["Zeus"] --> Stream["Stream"]
+    Zeus --> Search["Search"]
+    Maestro["Maestro"] --> Zeus
+
+    style Zeus fill:#FF6600,stroke:#CC5200,color:#000
+    style Maestro fill:#FF944D,stroke:#CC7640,color:#000
+    style Stream fill:#00CCCC,stroke:#009999,color:#000
+    style Search fill:#0B6CD9,stroke:#0958B3,color:#fff
 ```
 ````
 
-**Tables** — use for ANY structured comparison:
-- Feature matrices, pros/cons, timelines, metrics
-- If you're listing 3+ items with attributes, it should be a table
+### Tables
 
-**SVG assets** — for custom visuals Mermaid can't express:
-- Create: `write(command="create", path="/wiki/", title="diagram.svg", content="<svg>...</svg>", tags=["diagram"])`
-- Embed in wiki pages: `![Description](diagram.svg)`
+Use tables for ANY structured comparison — feature matrices, attribute lists, pros/cons, timelines. If you have 3+ items with attributes, it should be a table.
 
-### Citations — REQUIRED
+---
 
-Every factual claim MUST cite its source via markdown footnotes:
+## Citations — REQUIRED
+
+Every factual claim MUST cite its source via markdown footnotes. Citations are the link between the wiki and the source documents — they are how readers trace claims back to their origin.
+
+### Format
+
 ```
-Transformers use self-attention[^1] that scales quadratically[^2].
+Zeus provides the API for all Cribl.Cloud resources[^1].
 
-[^1]: attention-paper.pdf, p.3
-[^2]: scaling-laws.pdf, p.12-14
+[^1]: API & Organization Management Service (Zeus).html
+[^2]: Single Tenant Infrastructure.html, p.3
 ```
 
-Rules:
-- Use the FULL source filename — never truncate
-- Add page numbers for PDFs: `paper.pdf, p.3`
-- One citation per claim — don't batch unrelated claims
-- Citations render as hoverable popover badges in the UI
+### Rules
+
+1. **Human-readable source names** — URL-decode filenames. Write `Cribl.Cloud Architecture Deep Dive.html` NOT `Cribl.Cloud+Architecture+Deep+Dive.html`
+2. **Full filename** — never truncate. Include the extension (.html, .pdf)
+3. **Page numbers for PDFs** — `paper.pdf, p.3` or `paper.pdf, p.12-14`
+4. **One citation per claim** — don't batch unrelated claims under one footnote
+5. **Every factual statement needs a citation** — if you can't cite it, don't write it
+6. The UI renders citations as hoverable popover badges inline, and as a collapsible "Sources" panel at the bottom of each page. Source names in the panel are clickable links that navigate to the source document.
 
 ### Cross-References
-Link between wiki pages using standard markdown links to other wiki paths.
+
+Link between wiki pages using relative markdown links:
+```
+- [Zeus](../entities/zeus.md) — the API backend
+- [Authorization](authorization.md) — same-level reference
+```
+
+---
 
 ## Core Workflows
 
 ### Ingest a New Source
-1. Read it: `read(path="source.pdf", pages="1-10")`
-2. Discuss key takeaways with the user
-3. Create or update **concept** pages under `/wiki/concepts/`
-4. Create or update **entity** pages under `/wiki/entities/`
-5. Update `/wiki/overview.md` — source count, key findings, recent updates
-6. Append an entry to `/wiki/log.md`
-7. A single source typically touches 5-15 wiki pages — that's expected
+1. Read it: `read(path="source.pdf", pages="1-10")` — use batch reads for multiple files
+2. Identify key entities and concepts
+3. Create or update **entity** pages under `/wiki/entities/` — one per service/product/technology
+4. Create or update **concept** pages under `/wiki/concepts/` — one per cross-cutting theme
+5. Every new page must have: summary, diagram with colors, table, citations, related pages
+6. Update `/wiki/overview.md` — source count, key findings, recent updates
+7. Append an entry to `/wiki/log.md`
+8. A single source typically touches 5-15 wiki pages — that's expected
 
 ### Answer a Question
 1. `search(mode="search", query="term")` to find relevant content
 2. Read relevant wiki pages and sources
-3. Synthesize with citations
-4. If the answer is valuable, file it as a new wiki page — explorations should compound
+3. Synthesize with citations — every claim must trace back to a source
+4. If the answer is valuable, file it as a new wiki page
 5. Append a query entry to `/wiki/log.md`
 
 ### Maintain the Wiki (Lint)
-Check for: contradictions, orphan pages, missing cross-references, stale claims, concepts mentioned but lacking their own page. Append a lint entry to `/wiki/log.md`.
+Check for: contradictions, orphan pages, missing cross-references, stale claims, concepts mentioned but lacking their own page, diagrams missing component colors, citations with URL-encoded names. Append a lint entry to `/wiki/log.md`.
 
 ## Available Knowledge Bases
 

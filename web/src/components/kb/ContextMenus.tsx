@@ -75,8 +75,8 @@ export function SourceContextMenu({
 }
 
 export function SourceAreaContextMenu({
-  open, x, y, onNewNote, onNewFolder, onUpload, onClose,
-}: ContextMenuProps & { onNewNote: () => void; onNewFolder: () => void; onUpload: () => void }) {
+  open, x, y, onNewNote, onNewFolder, onClose,
+}: ContextMenuProps & { onNewNote: () => void; onNewFolder: () => void }) {
   const menuRef = React.useRef<HTMLDivElement>(null)
   useContextMenuDismiss(open, onClose, menuRef)
 
@@ -101,14 +101,6 @@ export function SourceAreaContextMenu({
       >
         <Folder className="size-3.5" />
         New Folder
-      </button>
-      <div className="h-px bg-border -mx-1 my-1" />
-      <button
-        onClick={onUpload}
-        className="flex items-center gap-2 w-full rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
-      >
-        <Upload className="size-3.5" />
-        Upload Files
       </button>
     </div>,
     document.body,

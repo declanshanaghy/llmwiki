@@ -16,6 +16,11 @@ import { useUserStore } from '@/stores'
 import { MermaidBlock } from './MermaidBlock'
 import type { DocumentListItem } from '@/lib/types'
 
+/** Only prevent default on plain clicks — let shift/cmd/ctrl through for new-tab behavior */
+function isPlainClick(e: React.MouseEvent): boolean {
+  return !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0
+}
+
 export interface TocItem {
   id: string
   text: string
@@ -149,10 +154,12 @@ function CitationBadge({
   num,
   source,
   onSourceClick,
+  href,
 }: {
   num: string
   source: string
   onSourceClick: (source: string) => void
+  href?: string
 }) {
   const [isOpen, setIsOpen] = React.useState(false)
   const hoverTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -181,18 +188,19 @@ function CitationBadge({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
+        <a
+          href={href || '#'}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onClick={(e) => {
+            if (!isPlainClick(e)) return
             e.preventDefault()
             onSourceClick(filename)
           }}
           className="inline-flex items-center gap-0.5 px-1.5 py-0 text-[10px] font-medium bg-accent-blue/10 text-accent-blue rounded-full border border-accent-blue/20 hover:bg-accent-blue/20 transition-colors leading-tight cursor-pointer"
         >
           {num}
-        </button>
+        </a>
       </PopoverTrigger>
       <PopoverContent
         side="top"
@@ -342,6 +350,24 @@ interface WikiContentProps {
   documents?: DocumentListItem[]
 }
 
+function resolveSourceDoc(filename: string, documents?: DocumentListItem[]): DocumentListItem | undefined {
+  if (!documents) return undefined
+  const lower = filename.toLowerCase()
+  const encoded = lower.replace(/ /g, '+')
+  return documents.find((d) => {
+    const fn = d.filename.toLowerCase()
+    const fnDecoded = (() => { try { return decodeURIComponent(fn.replace(/\+/g, ' ')) } catch { return fn } })()
+    const title = (d.title || '').toLowerCase()
+    return fn === lower || fn === encoded || fnDecoded === lower || title === lower
+  })
+}
+
+function sourceDocUrl(filename: string, documents?: DocumentListItem[]): string | undefined {
+  const doc = resolveSourceDoc(filename, documents)
+  if (!doc?.document_number) return undefined
+  return `?doc=${doc.document_number}&tab=sources`
+}
+
 export function WikiContent({ content, title, onNavigate, onSourceClick, documents }: WikiContentProps) {
   const processedContent = React.useMemo(() => stripLeadingH1(content, title), [content, title])
   const tocItems = React.useMemo(() => extractTocFromMarkdown(processedContent), [processedContent])
@@ -458,13 +484,20 @@ export function WikiContent({ content, title, onNavigate, onSourceClick, documen
           !href.startsWith('#') &&
           !href.startsWith('mailto:')
         ) {
+          // Build a real URL for the wiki page so shift+click opens in new tab
+          const wikiUrl = `?page=${encodeURIComponent(href.replace(/^\.\.\//, '').replace(/^\/wiki\//, ''))}`
           return (
-            <button
-              onClick={() => onNavigate(href)}
+            <a
+              href={wikiUrl}
+              onClick={(e) => {
+                if (!isPlainClick(e)) return
+                e.preventDefault()
+                onNavigate(href)
+              }}
               className="text-accent-blue underline underline-offset-2 decoration-accent-blue/30 hover:decoration-accent-blue transition-colors cursor-pointer font-medium"
             >
               {children}
-            </button>
+            </a>
           )
         }
 
@@ -474,6 +507,7 @@ export function WikiContent({ content, title, onNavigate, onSourceClick, documen
             <a
               href={href}
               onClick={(e) => {
+                if (!isPlainClick(e)) return
                 e.preventDefault()
                 const id = href.slice(1)
                 const el = document.getElementById(id)
@@ -512,6 +546,7 @@ export function WikiContent({ content, title, onNavigate, onSourceClick, documen
                 <CitationBadge
                   num={num}
                   source={source}
+                  href={sourceDocUrl(source.replace(/,\s*p\.?\s*.+$/, '').trim(), documents)}
                   onSourceClick={(filename) => {
                     if (onSourceClick) onSourceClick(filename)
                   }}
@@ -623,26 +658,35 @@ export function WikiContent({ content, title, onNavigate, onSourceClick, documen
           // Render our own clean footnotes from parsed sources
           const entries = Array.from(footnoteSources.entries())
           if (entries.length === 0) return null
+          const decodeSource = (s: string) => {
+            try { return decodeURIComponent(s.replace(/\+/g, ' ')) } catch { return s }
+          }
           return (
             <section className="mt-12 pt-6 border-t border-border">
-              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/50 mb-3">
-                Sources
-              </p>
-              <ol className="list-decimal pl-5 space-y-1.5">
-                {entries.map(([num, source]) => {
-                  const filename = source.replace(/,\s*p\.?\s*.+$/, '').trim()
-                  return (
-                    <li key={num} className="text-sm pl-1">
-                      <button
-                        onClick={() => onSourceClick?.(filename)}
-                        className="text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer text-left"
-                      >
-                        {source}
-                      </button>
-                    </li>
-                  )
-                })}
-              </ol>
+              <details className="group">
+                <summary className="text-xs font-semibold uppercase tracking-wider text-muted-foreground/50 cursor-pointer select-none flex items-center gap-1.5 hover:text-muted-foreground transition-colors">
+                  <svg className="size-3 transition-transform group-open:rotate-90" viewBox="0 0 12 12" fill="currentColor"><path d="M4.5 2l4 4-4 4" /></svg>
+                  Sources ({entries.length})
+                </summary>
+                <ol className="list-decimal pl-5 space-y-1.5 mt-3">
+                  {entries.map(([num, source]) => {
+                    const filename = source.replace(/,\s*p\.?\s*.+$/, '').trim()
+                    const displayName = decodeSource(source)
+                    const docUrl = sourceDocUrl(filename, documents) || sourceDocUrl(decodeSource(filename), documents)
+                    return (
+                      <li key={num} className="text-sm pl-1">
+                        <a
+                          href={docUrl || '#'}
+                          onClick={(e) => { if (!isPlainClick(e)) return; e.preventDefault(); onSourceClick?.(decodeSource(filename)) }}
+                          className="text-[hsl(var(--accent-blue))] hover:underline transition-colors cursor-pointer"
+                        >
+                          {displayName}
+                        </a>
+                      </li>
+                    )
+                  })}
+                </ol>
+              </details>
             </section>
           )
         }
