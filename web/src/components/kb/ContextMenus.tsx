@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import ReactDOM from 'react-dom'
-import { Pencil, Trash2, NotepadText, Folder, Upload } from 'lucide-react'
+import { Pencil, Trash2, NotepadText, Folder, Upload, RefreshCw } from 'lucide-react'
 
 interface ContextMenuProps {
   open: boolean
@@ -32,8 +32,8 @@ function useContextMenuDismiss(open: boolean, onClose: () => void, menuRef: Reac
 }
 
 export function SourceContextMenu({
-  open, x, y, onRename, onDelete, onClose,
-}: ContextMenuProps & { onRename: () => void; onDelete: () => void }) {
+  open, x, y, onRename, onDelete, onReimport, onClose,
+}: ContextMenuProps & { onRename: () => void; onDelete: () => void; onReimport?: () => void }) {
   const menuRef = React.useRef<HTMLDivElement>(null)
   useContextMenuDismiss(open, onClose, menuRef)
 
@@ -52,6 +52,15 @@ export function SourceContextMenu({
         <Pencil className="size-3.5" />
         Rename
       </button>
+      {onReimport && (
+        <button
+          onClick={onReimport}
+          className="flex items-center gap-2 w-full rounded-sm px-2 py-1.5 text-sm hover:bg-accent cursor-pointer"
+        >
+          <RefreshCw className="size-3.5" />
+          Re-import
+        </button>
+      )}
       <div className="h-px bg-border -mx-1 my-1" />
       <button
         onClick={onDelete}

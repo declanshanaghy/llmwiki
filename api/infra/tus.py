@@ -135,9 +135,7 @@ async def _finalize(upload: TusUpload, app_state) -> str:
         upload.temp_path.unlink(missing_ok=True)
         _uploads.pop(upload.upload_id, None)
 
-    ocr_service = app_state.ocr_service
-    if ocr_service:
-        asyncio.create_task(ocr_service.process_document(document_id, user_id))
+    # Document stays in 'pending' status — the worker picks it up automatically
 
     logger.info("TUS finalized: doc=%s file=%s", document_id[:8], upload.filename)
     return document_id

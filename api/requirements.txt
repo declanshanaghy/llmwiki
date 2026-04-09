@@ -16,4 +16,4 @@ aioboto3==14.3.0
 openpyxl==3.1.5
 beautifulsoup4==4.13.4
 lxml==5.4.0
-pdf-oxide==0.3.21
+# pdf-oxide>=0.3.5  # Rust-based, no aarch64 wheel — install manually on x86_64 if needed

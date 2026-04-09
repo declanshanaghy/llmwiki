@@ -32,16 +32,7 @@ from routes.me import router as me_router
 from routes.usage import router as usage_router
 from routes.admin import router as admin_router
 from infra.tus import router as tus_router, cleanup_stale_uploads
-
-
-async def _recover_stuck_documents(pool: asyncpg.Pool, ocr_service):
-    rows = await pool.fetch(
-        "SELECT id::text, user_id::text FROM documents "
-        "WHERE status IN ('pending', 'processing') AND NOT archived"
-    )
-    for row in rows:
-        logger.info("Recovering stuck document %s", row["id"][:8])
-        asyncio.create_task(ocr_service.process_document(row["id"], row["user_id"]))
+from routes.confluence import router as confluence_router
 
 
 @asynccontextmanager
@@ -49,25 +40,40 @@ async def lifespan(app: FastAPI):
     pool = await asyncpg.create_pool(settings.DATABASE_URL, min_size=2, max_size=10)
     app.state.pool = pool
 
-    s3_service = None
-    ocr_service = None
-    if settings.AWS_ACCESS_KEY_ID and settings.S3_BUCKET:
-        from services.s3 import S3Service
-        s3_service = S3Service()
-    if s3_service:
-        from services.ocr import OCRService
-        ocr_service = OCRService(s3_service, pool)
+    from services.s3 import S3Service
+    from services.ocr import OCRService
+    from services.document_worker import DocumentWorker
+    s3_service = S3Service()
+    ocr_service = OCRService(s3_service, pool)
 
     app.state.s3_service = s3_service
     app.state.ocr_service = ocr_service
 
+    confluence_service = None
+    if settings.CONFLUENCE_BASE_URL:
+        from services.confluence import ConfluenceService
+        confluence_service = ConfluenceService(pool, s3_service, ocr_service)
+    app.state.confluence_service = confluence_service
+
     cleanup_task = asyncio.create_task(cleanup_stale_uploads())
 
-    if ocr_service:
-        await _recover_stuck_documents(pool, ocr_service)
+    # Generic document processing worker — replaces fire-and-forget pattern
+    worker = DocumentWorker(pool, ocr_service, confluence_service)
+    worker_task = asyncio.create_task(worker.start())
+
+    # Confluence auto-sync
+    sync_task = None
+    if confluence_service and settings.CONFLUENCE_SYNC_ENABLED:
+        from services.confluence_sync import ConfluenceSyncService
+        sync_service = ConfluenceSyncService(pool, confluence_service)
+        sync_task = asyncio.create_task(sync_service.start())
 
     yield
 
+    worker.stop()
+    worker_task.cancel()
+    if sync_task:
+        sync_task.cancel()
     cleanup_task.cancel()
     await pool.close()
 
@@ -98,3 +104,4 @@ app.include_router(me_router)
 app.include_router(usage_router)
 app.include_router(admin_router)
 app.include_router(tus_router)
+app.include_router(confluence_router)

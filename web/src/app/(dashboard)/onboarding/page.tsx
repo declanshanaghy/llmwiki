@@ -266,17 +266,6 @@ export default function OnboardingPage() {
                 <ArrowRight className="size-3.5" />
               </button>
 
-              <div className="mt-6">
-                <a
-                  href="https://claude.ai"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <ExternalLink size={12} />
-                  Open Claude
-                </a>
-              </div>
             </div>
           )}
         </div>

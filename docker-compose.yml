@@ -1,15 +1,232 @@
+# ============================================================
+# LLM Wiki — Full local stack
+# Supabase (db, auth, rest, kong) + App (api, mcp, converter, web)
+# ============================================================
+#
+# Usage:
+#   docker compose up -d          # start everything
+#   docker compose logs -f        # tail logs
+#   docker compose down           # stop
+#   docker compose down -v        # stop + wipe database
+#
+# Endpoints:
+#   Web UI        http://localhost:3000
+#   API           http://localhost:8000
+#   MCP           http://localhost:8080
+#   Supabase API  http://localhost:54321  (auth, rest)
+#   Mailpit       http://localhost:54324  (email catcher)
+#
+# Default Supabase credentials (local dev only):
+#   ANON_KEY         eyJhbG...I0  (see x-supabase-anon-key below)
+#   SERVICE_ROLE_KEY eyJhbG...IU  (see x-supabase-service-role-key below)
+#   JWT_SECRET       super-secret-jwt-token-with-at-least-32-characters-long
+#   DB user/pass     supabase_admin / postgres
+# ============================================================
+
+x-supabase-anon-key: &anon-key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6ImFub24iLCJleHAiOjE5ODM4MTI5OTZ9.CRXP1A7WOeoJeXxjNni43kdQwgnWNReilDMblYTn_I0"
+x-supabase-service-role-key: &service-role-key "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS1kZW1vIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImV4cCI6MTk4MzgxMjk5Nn0.EGIM96RAZx35lJzdJsyH-qQwv8Hdp7fsn3W0YpN81IU"
+x-supabase-jwt-secret: &jwt-secret "super-secret-jwt-token-with-at-least-32-characters-long"
+x-supabase-db-url: &db-url "postgresql://supabase_admin:postgres@supabase-db:5432/postgres"
+
 services:
-  db:
-    image: postgres:16-alpine
+  # ── Supabase: Postgres ──────────────────────────────────────
+  supabase-db:
+    image: public.ecr.aws/supabase/postgres:17.6.1.095
     environment:
-      POSTGRES_DB: supavault
-      POSTGRES_USER: postgres
+      POSTGRES_USER: supabase_admin
       POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+      JWT_SECRET: *jwt-secret
+      JWT_EXP: "3600"
     ports:
-      - "5432:5432"
+      - "54322:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ./supabase/migrations:/docker-entrypoint-initdb.d
+      - supabase-db:/var/lib/postgresql/data
+      - ./docker/00-roles-fix.sql:/docker-entrypoint-initdb.d/migrations/00_roles_fix.sql:ro
+      - ./supabase/migrations/001_initial.sql:/docker-entrypoint-initdb.d/migrations/99_app_migration.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U supabase_admin -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Supabase: Auth (GoTrue) ─────────────────────────────────
+  supabase-auth:
+    image: public.ecr.aws/supabase/gotrue:v2.188.1
+    environment:
+      API_EXTERNAL_URL: http://localhost:54321
+      GOTRUE_API_HOST: 0.0.0.0
+      GOTRUE_API_PORT: "9999"
+      GOTRUE_DB_DRIVER: postgres
+      GOTRUE_DB_DATABASE_URL: "postgresql://supabase_auth_admin:postgres@supabase-db:5432/postgres"
+      GOTRUE_SITE_URL: http://localhost:3000
+      GOTRUE_URI_ALLOW_LIST: "http://localhost:3000"
+      GOTRUE_DISABLE_SIGNUP: "false"
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_JWT_AUD: authenticated
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_EXP: "3600"
+      GOTRUE_JWT_SECRET: *jwt-secret
+      GOTRUE_JWT_ISSUER: http://localhost:54321/auth/v1
+      GOTRUE_JWT_VALIDMETHODS: "HS256,RS256,ES256"
+      GOTRUE_JWT_VALID_METHODS: "HS256,RS256,ES256"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_SMTP_HOST: supabase-mailpit
+      GOTRUE_SMTP_PORT: "1025"
+      GOTRUE_SMTP_ADMIN_EMAIL: admin@email.com
+      GOTRUE_SMTP_SENDER_NAME: Admin
+      GOTRUE_MAILER_URLPATHS_INVITE: http://localhost:54321/auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_CONFIRMATION: http://localhost:54321/auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_RECOVERY: http://localhost:54321/auth/v1/verify
+      GOTRUE_MAILER_URLPATHS_EMAIL_CHANGE: http://localhost:54321/auth/v1/verify
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_SMS_AUTOCONFIRM: "true"
+      GOTRUE_PASSWORD_MIN_LENGTH: "6"
+      GOTRUE_SECURITY_REFRESH_TOKEN_ROTATION_ENABLED: "true"
+      GOTRUE_SECURITY_REFRESH_TOKEN_REUSE_INTERVAL: "10"
+      GOTRUE_RATE_LIMIT_EMAIL_SENT: "360000"
+      GOTRUE_EXTERNAL_ANONYMOUS_USERS_ENABLED: "false"
+      GOTRUE_JWT_KEYS: '[{"kty":"EC","kid":"b81269f1-21d8-4f2e-b719-c2240a840d90","use":"sig","key_ops":["sign","verify"],"alg":"ES256","ext":true,"d":"dIhR8wywJlqlua4y_yMq2SLhlFXDZJBCvFrY1DCHyVU","crv":"P-256","x":"M5Sjqn5zwC9Kl1zVfUUGvv9boQjCGd45G8sdopBExB4","y":"P6IXMvA2WYXSHSOMTBH2jsw_9rrzGy89FjPf6oOsIxQ"}]'
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+
+  # ── Supabase: PostgREST ─────────────────────────────────────
+  supabase-rest:
+    image: public.ecr.aws/supabase/postgrest:v14.7
+    environment:
+      PGRST_DB_URI: "postgresql://authenticator:postgres@supabase-db:5432/postgres"
+      PGRST_DB_SCHEMAS: "public,graphql_public"
+      PGRST_DB_EXTRA_SEARCH_PATH: "public,extensions"
+      PGRST_DB_MAX_ROWS: "1000"
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: '{"keys":[{"kty":"oct","k":"c3VwZXItc2VjcmV0LWp3dC10b2tlbi13aXRoLWF0LWxlYXN0LTMyLWNoYXJhY3RlcnMtbG9uZw"},{"kty":"EC","kid":"b81269f1-21d8-4f2e-b719-c2240a840d90","use":"sig","alg":"ES256","crv":"P-256","x":"M5Sjqn5zwC9Kl1zVfUUGvv9boQjCGd45G8sdopBExB4","y":"P6IXMvA2WYXSHSOMTBH2jsw_9rrzGy89FjPf6oOsIxQ"}]}'
+      PGRST_ADMIN_SERVER_PORT: "3001"
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+
+  # ── Supabase: Kong API Gateway ──────────────────────────────
+  supabase-kong:
+    image: public.ecr.aws/supabase/kong:2.8.1
+    ports:
+      - "54321:8000"
+      - "54323:8443"
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: "LAST,A,CNAME"
+      KONG_PLUGINS: "request-transformer,cors"
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: "160k"
+      KONG_NGINX_PROXY_PROXY_BUFFERS: "64 160k"
+      KONG_NGINX_WORKER_PROCESSES: "1"
+    volumes:
+      - ./docker/kong.yml:/home/kong/kong.yml:ro
+    depends_on:
+      - supabase-auth
+      - supabase-rest
+
+  # ── Supabase: Mailpit (email catcher) ───────────────────────
+  supabase-mailpit:
+    image: public.ecr.aws/supabase/mailpit:v1.22.3
+    ports:
+      - "54324:8025"
+
+  # ── App: API (FastAPI) ──────────────────────────────────────
+  api:
+    build: ./api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./llm-wiki-data:/data
+    environment:
+      DATABASE_URL: *db-url
+      SUPABASE_URL: http://supabase-kong:8000
+      SUPABASE_JWT_SECRET: *jwt-secret
+      APP_URL: http://localhost:3000
+      API_URL: http://api:8000
+      CONVERTER_URL: http://converter:8000
+      CONVERTER_SECRET: localdev
+      STAGE: dev
+      PDF_BACKEND: mistral
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      TURBOPUFFER_API_KEY: ${TURBOPUFFER_API_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-supavault-documents}
+      CONFLUENCE_BASE_URL: ${CONFLUENCE_BASE_URL:-}
+      CONFLUENCE_EMAIL: ${CONFLUENCE_EMAIL:-}
+      CONFLUENCE_API_TOKEN: ${CONFLUENCE_API_TOKEN:-}
+      CONFLUENCE_SYNC_ENABLED: ${CONFLUENCE_SYNC_ENABLED:-true}
+      CONFLUENCE_SYNC_INTERVAL: ${CONFLUENCE_SYNC_INTERVAL:-300}
+      CONFLUENCE_SYNC_BATCH_SIZE: ${CONFLUENCE_SYNC_BATCH_SIZE:-20}
+      WORKER_POLL_INTERVAL: ${WORKER_POLL_INTERVAL:-5}
+      WORKER_MAX_CONCURRENT: ${WORKER_MAX_CONCURRENT:-3}
+      WORKER_STALE_TIMEOUT: ${WORKER_STALE_TIMEOUT:-900}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-kong:
+        condition: service_started
+
+  # ── App: MCP Server ─────────────────────────────────────────
+  mcp:
+    build: ./mcp
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./llm-wiki-data:/data
+    environment:
+      DATABASE_URL: *db-url
+      SUPABASE_URL: http://supabase-kong:8000
+      APP_URL: http://localhost:3000
+      API_URL: http://api:8000
+      MCP_URL: http://localhost:8080/mcp
+      STAGE: dev
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
+      TURBOPUFFER_API_KEY: ${TURBOPUFFER_API_KEY:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-supavault-documents}
+    depends_on:
+      supabase-db:
+        condition: service_healthy
+      supabase-kong:
+        condition: service_started
+
+  # ── App: Converter (LibreOffice) ────────────────────────────
+  converter:
+    build: ./converter
+    expose:
+      - "8000"
+    volumes:
+      - ./llm-wiki-data:/data
+    environment:
+      PORT: "8000"
+      CONVERTER_SECRET: localdev
+
+  # ── App: Web (Next.js) ──────────────────────────────────────
+  web:
+    build:
+      context: ./web
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: http://localhost:54321
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: *anon-key
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_MCP_URL: http://localhost:8080/mcp
+        SUPABASE_INTERNAL_URL: http://supabase-kong:8000
+    ports:
+      - "3000:3000"
+    environment:
+      # Server-side override — browser still uses NEXT_PUBLIC_SUPABASE_URL (localhost)
+      SUPABASE_INTERNAL_URL: http://supabase-kong:8000
+    depends_on:
+      - api
+      - mcp
 
 volumes:
-  pgdata:
+  supabase-db:

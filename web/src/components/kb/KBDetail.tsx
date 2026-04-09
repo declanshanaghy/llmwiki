@@ -2,7 +2,7 @@
 
 import * as React from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
-import { Upload as UploadIcon, BookOpen, ArrowUpRight, Loader2 } from 'lucide-react'
+import { Upload as UploadIcon, BookOpen, Loader2 } from 'lucide-react'
 import * as tus from 'tus-js-client'
 import { useUserStore } from '@/stores'
 import { useKBDocuments } from '@/hooks/useKBDocuments'
@@ -16,6 +16,8 @@ import {
   PdfDocViewer, ImageViewer, HtmlDocViewer, ContentViewer,
   UnsupportedViewer, ProcessingViewer, FailedViewer,
 } from '@/components/kb/DocViewers'
+import { ConfluenceImportDialog } from '@/components/kb/ConfluenceImportDialog'
+import { SourceIngestionButtons } from '@/components/kb/SourceIngestionMenu'
 import type { DocumentListItem, WikiNode, WikiSubsection } from '@/lib/types'
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -178,6 +180,9 @@ export function KBDetail({ kbId, kbName }: Props) {
   const [pageLoadedPath, setPageLoadedPath] = React.useState<string | null>(null)
   const [indexLoaded, setIndexLoaded] = React.useState(false)
   const [selectionHydrated, setSelectionHydrated] = React.useState(false)
+  const [confluenceDialogOpen, setConfluenceDialogOpen] = React.useState(false)
+  const [confluenceDialogUrl, setConfluenceDialogUrl] = React.useState<string | undefined>(undefined)
+  const [confluenceDialogChildren, setConfluenceDialogChildren] = React.useState<boolean | undefined>(undefined)
 
   // Source doc selection state — synced with ?doc= query param
   const [activeSourceDocId, setActiveSourceDocId] = React.useState<string | null>(null)
@@ -535,12 +540,40 @@ export function KBDetail({ kbId, kbName }: Props) {
   const handleDeleteDocument = async (docId: string) => {
     const t = getToken()
     if (!t) return
+
+    // Find all descendant docs via confluence_parent_id chain
+    const doc = documents.find((d) => d.id === docId)
+    const pageId = (doc?.metadata as Record<string, unknown> | null)?.confluence_page_id as string | undefined
+
+    const descendantIds: string[] = []
+    if (pageId) {
+      const findDescendants = (parentPageId: string) => {
+        for (const d of documents) {
+          const meta = d.metadata as Record<string, unknown> | null
+          if (meta?.confluence_parent_id === parentPageId && d.id !== docId) {
+            descendantIds.push(d.id)
+            const childPageId = meta?.confluence_page_id as string | undefined
+            if (childPageId) findDescendants(childPageId)
+          }
+        }
+      }
+      findDescendants(pageId)
+    }
+
+    const total = 1 + descendantIds.length
+    const message = total > 1
+      ? `Delete "${doc?.title || doc?.filename}" and ${descendantIds.length} child document${descendantIds.length !== 1 ? 's' : ''}?`
+      : `Delete "${doc?.title || doc?.filename}"?`
+
+    if (!window.confirm(message)) return
+
+    const allIds = [docId, ...descendantIds]
     try {
-      await apiFetch(`/v1/documents/${docId}`, t, { method: 'DELETE' })
-      setDocuments((prev) => prev.filter((d) => d.id !== docId))
-      if (activeSourceDocId === docId) setActiveSourceDocId(null)
+      await Promise.all(allIds.map((id) => apiFetch(`/v1/documents/${id}`, t, { method: 'DELETE' })))
+      setDocuments((prev) => prev.filter((d) => !allIds.includes(d.id)))
+      if (activeSourceDocId && allIds.includes(activeSourceDocId)) setActiveSourceDocId(null)
     } catch {
-      toast.error('Failed to delete document')
+      toast.error('Failed to delete document(s)')
     }
   }
 
@@ -556,6 +589,15 @@ export function KBDetail({ kbId, kbName }: Props) {
     } catch {
       toast.error('Failed to rename document')
     }
+  }
+
+  const handleReimportDocument = (docId: string) => {
+    const doc = sourceDocs.find((d) => d.id === docId)
+    if (!doc) return
+    const meta = doc.metadata as Record<string, unknown> | null
+    setConfluenceDialogUrl(doc.url ?? undefined)
+    setConfluenceDialogChildren(meta?.confluence_import_children === true ? true : undefined)
+    setConfluenceDialogOpen(true)
   }
 
   const handleUploadClick = () => {
@@ -714,8 +756,10 @@ export function KBDetail({ kbId, kbName }: Props) {
             onCreateNote={handleCreateNote}
             onCreateFolder={handleCreateFolder}
             onUpload={handleUploadClick}
+            onConfluenceImport={() => { setConfluenceDialogUrl(undefined); setConfluenceDialogChildren(undefined); setConfluenceDialogOpen(true) }}
             onDeleteDocument={handleDeleteDocument}
             onRenameDocument={handleRenameDocument}
+            onReimportDocument={handleReimportDocument}
             onMoveDocument={handleMoveDocument}
             selectedIds={selectedIds}
             onSelect={handleSelect}
@@ -773,24 +817,10 @@ export function KBDetail({ kbId, kbName }: Props) {
                   Add some sources, then ask Claude to compile a wiki from them.
                 </p>
               </div>
-              <div className="flex items-center gap-3 mt-2">
-                <button
-                  onClick={handleUploadClick}
-                  className="inline-flex items-center gap-2 rounded-full bg-foreground text-background px-5 py-2 text-sm font-medium hover:opacity-90 transition-opacity cursor-pointer"
-                >
-                  <UploadIcon className="size-3.5 opacity-60" />
-                  Upload Sources
-                </button>
-                <a
-                  href="https://claude.ai"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-border px-5 py-2 text-sm font-medium hover:bg-accent transition-colors"
-                >
-                  Open Claude
-                  <ArrowUpRight className="size-3.5 opacity-60" />
-                </a>
-              </div>
+              <SourceIngestionButtons
+                onUpload={handleUploadClick}
+                onConfluenceImport={() => { setConfluenceDialogUrl(undefined); setConfluenceDialogChildren(undefined); setConfluenceDialogOpen(true) }}
+              />
             </div>
           )}
         </div>
@@ -800,6 +830,14 @@ export function KBDetail({ kbId, kbName }: Props) {
         count={selectedIds.size}
         onDelete={handleDeleteSelected}
         onClear={clearSelection}
+      />
+
+      <ConfluenceImportDialog
+        open={confluenceDialogOpen}
+        onOpenChange={setConfluenceDialogOpen}
+        kbId={kbId}
+        initialUrl={confluenceDialogUrl}
+        initialIncludeChildren={confluenceDialogChildren}
       />
     </div>
   )

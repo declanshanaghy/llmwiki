@@ -30,6 +30,7 @@ export interface Document {
   version: number
   document_number: number | null
   sort_order: number | null
+  parser: string | null
   archived: boolean
   created_at: string
   updated_at: string

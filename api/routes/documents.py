@@ -1,11 +1,14 @@
 import json
+import mimetypes
 import re
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 from uuid import UUID
 
 import yaml
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from deps import get_scoped_db, get_user_id
@@ -332,3 +335,16 @@ async def delete_document(
     )
     if result == "UPDATE 0":
         raise HTTPException(status_code=404, detail="Document not found")
+
+
+@router.get("/files/{file_path:path}")
+async def serve_local_file(file_path: str):
+    """Serve files from local storage (replaces S3 presigned URLs)."""
+    base = Path("/data")
+    full = (base / file_path).resolve()
+    if not str(full).startswith(str(base.resolve())):
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not full.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+    media_type = mimetypes.guess_type(str(full))[0] or "application/octet-stream"
+    return FileResponse(full, media_type=media_type)

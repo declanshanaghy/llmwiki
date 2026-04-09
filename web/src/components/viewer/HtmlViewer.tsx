@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import { ExternalLink, Loader2 } from 'lucide-react'
+import { useTheme } from 'next-themes'
 import { cn } from '@/lib/utils'
 
 type Props = {
@@ -10,6 +11,8 @@ type Props = {
   highlightIds?: string[]
   className?: string
 }
+
+const EMPTY_IDS: string[] = []
 
 function buildHighlightCss(ids: string[]): string {
   if (!ids.length) return ''
@@ -26,17 +29,33 @@ ${selectors} {
 </style>`
 }
 
-export default function HtmlViewer({ fileUrl, sourceUrl, highlightIds = [], className }: Props) {
+const DARK_STYLE = `
+<style data-theme="dark">
+  html, body {
+    background-color: hsl(20 14% 4%) !important;
+    color: hsl(40 10% 90%) !important;
+    color-scheme: dark;
+  }
+  a { color: hsl(210 80% 65%); }
+  table, th, td { border-color: hsl(20 10% 20%) !important; }
+  th { background-color: hsl(20 12% 10%) !important; }
+  blockquote { border-color: hsl(20 10% 25%) !important; background-color: hsl(20 12% 8%) !important; }
+  pre, code { background-color: hsl(20 12% 8%) !important; color: hsl(40 10% 85%) !important; }
+  img { opacity: 0.9; }
+</style>`
+
+export default function HtmlViewer({ fileUrl, sourceUrl, highlightIds = EMPTY_IDS, className }: Props) {
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [srcdoc, setSrcdoc] = useState<string | null>(null)
+  const [rawHtml, setRawHtml] = useState<string | null>(null)
+  const { theme } = useTheme()
 
   useEffect(() => {
     let cancelled = false
     setLoading(true)
     setError(null)
-    setSrcdoc(null)
+    setRawHtml(null)
 
     fetch(fileUrl)
       .then((res) => {
@@ -44,13 +63,10 @@ export default function HtmlViewer({ fileUrl, sourceUrl, highlightIds = [], clas
         return res.text()
       })
       .then((html) => {
-        if (cancelled) return
-        const highlighted = html + buildHighlightCss(highlightIds)
-        setSrcdoc(highlighted)
+        if (!cancelled) setRawHtml(html)
       })
       .catch((err) => {
-        if (cancelled) return
-        setError(err.message)
+        if (!cancelled) setError(err.message)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -58,6 +74,13 @@ export default function HtmlViewer({ fileUrl, sourceUrl, highlightIds = [], clas
 
     return () => { cancelled = true }
   }, [fileUrl, highlightIds])
+
+  // Build srcdoc from raw HTML + highlight CSS + theme styles
+  const srcdoc = React.useMemo(() => {
+    if (!rawHtml) return ''
+    const themeStyle = theme === 'dark' ? DARK_STYLE : ''
+    return rawHtml + buildHighlightCss(highlightIds) + themeStyle
+  }, [rawHtml, highlightIds, theme])
 
   const handleIframeLoad = () => {
     setLoading(false)
@@ -97,9 +120,9 @@ export default function HtmlViewer({ fileUrl, sourceUrl, highlightIds = [], clas
   return (
     <iframe
       ref={iframeRef}
-      srcDoc={srcdoc ?? ''}
+      srcDoc={srcdoc}
       sandbox="allow-same-origin"
-      className={cn('w-full h-full border-0 bg-white', className)}
+      className={cn('w-full h-full border-0', theme === 'dark' ? 'bg-[hsl(20,14%,4%)]' : 'bg-white', className)}
       title="Document viewer"
       onLoad={handleIframeLoad}
     />

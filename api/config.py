@@ -35,5 +35,16 @@ class Settings(BaseSettings):
 
     SENTRY_DSN: str = ""
 
+    CONFLUENCE_BASE_URL: str = ""
+    CONFLUENCE_EMAIL: str = ""
+    CONFLUENCE_API_TOKEN: str = ""
+    CONFLUENCE_SYNC_ENABLED: bool = True
+    CONFLUENCE_SYNC_INTERVAL: int = 300          # seconds between sync polls
+    CONFLUENCE_SYNC_BATCH_SIZE: int = 20         # pages checked per cycle
+
+    WORKER_POLL_INTERVAL: int = 5                # seconds between queue polls
+    WORKER_MAX_CONCURRENT: int = 3               # max parallel document processing
+    WORKER_STALE_TIMEOUT: int = 900              # 15 min — reset processing jobs older than this
+
 
 settings = Settings()

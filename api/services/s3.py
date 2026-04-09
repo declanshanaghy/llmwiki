@@ -1,57 +1,60 @@
 import asyncio
 import json
 import logging
+import shutil
 from pathlib import Path
-
-import aioboto3
 
 from config import settings
 
 logger = logging.getLogger(__name__)
 
+_BASE_DIR = Path(settings.S3_BUCKET if settings.S3_BUCKET.startswith("/") else "/data")
 
-class S3Service:
-    def __init__(self):
-        self._session = aioboto3.Session(
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION,
-        )
-        self._bucket = settings.S3_BUCKET
+
+class LocalStorageService:
+    """Drop-in replacement for S3Service that stores files on local disk."""
+
+    def __init__(self, base_dir: str = str(_BASE_DIR), api_url: str = ""):
+        self._base = Path(base_dir)
+        self._base.mkdir(parents=True, exist_ok=True)
+        # URL that the *browser* uses to fetch files (not internal Docker URL)
+        self._api_url = api_url or settings.APP_URL.replace(":3000", ":8000")
 
     async def upload_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream"):
-        async with self._session.client("s3") as s3:
-            await s3.put_object(Bucket=self._bucket, Key=key, Body=data, ContentType=content_type)
+        dest = self._base / key
+        await asyncio.to_thread(self._write, dest, data)
 
     async def upload_file(self, key: str, file_path: str, content_type: str = "application/octet-stream"):
-        data = await asyncio.to_thread(Path(file_path).read_bytes)
-        await self.upload_bytes(key, data, content_type)
+        dest = self._base / key
+        await asyncio.to_thread(self._copy, file_path, dest)
 
     async def generate_presigned_get(self, key: str, expires_in: int = 3600) -> str:
-        async with self._session.client("s3") as s3:
-            return await s3.generate_presigned_url(
-                "get_object",
-                Params={"Bucket": self._bucket, "Key": key},
-                ExpiresIn=expires_in,
-            )
+        return f"{self._api_url}/files/{key}"
 
     async def generate_presigned_put(self, key: str, content_type: str = "application/pdf", expires_in: int = 3600) -> str:
-        async with self._session.client("s3") as s3:
-            return await s3.generate_presigned_url(
-                "put_object",
-                Params={"Bucket": self._bucket, "Key": key, "ContentType": content_type},
-                ExpiresIn=expires_in,
-            )
+        return f"{self._api_url}/files/{key}"
 
     async def download_bytes(self, key: str) -> bytes:
-        async with self._session.client("s3") as s3:
-            resp = await s3.get_object(Bucket=self._bucket, Key=key)
-            return await resp["Body"].read()
+        return await asyncio.to_thread((self._base / key).read_bytes)
 
     async def download_to_file(self, key: str, file_path: str):
-        data = await self.download_bytes(key)
-        await asyncio.to_thread(Path(file_path).write_bytes, data)
+        await asyncio.to_thread(self._copy, self._base / key, file_path)
 
     async def download_json(self, key: str) -> dict:
         body = await self.download_bytes(key)
         return json.loads(body)
+
+    @staticmethod
+    def _write(dest: Path, data: bytes):
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+
+    @staticmethod
+    def _copy(src, dest):
+        dest = Path(dest)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(str(src), str(dest))
+
+
+# Alias so existing imports like `from services.s3 import S3Service` keep working
+S3Service = LocalStorageService

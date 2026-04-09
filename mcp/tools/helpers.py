@@ -1,8 +1,9 @@
+import asyncio
 import os
 import logging
 from fnmatch import fnmatch
+from pathlib import Path
 
-import aioboto3
 from mcp.server.fastmcp import Context
 from mcp.server.auth.middleware.auth_context import get_access_token
 
@@ -60,30 +61,19 @@ async def resolve_kb(user_id: str, slug: str) -> dict | None:
     )
 
 
-_s3_session = None
-
-
-def _get_s3_session():
-    global _s3_session
-    if _s3_session is None and settings.AWS_ACCESS_KEY_ID:
-        _s3_session = aioboto3.Session(
-            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-            region_name=settings.AWS_REGION,
-        )
-    return _s3_session
+_LOCAL_BASE = Path("/data")
 
 
 async def load_s3_bytes(key: str) -> bytes | None:
-    session = _get_s3_session()
-    if not session:
-        return None
+    """Load file bytes from local storage (name kept for compatibility)."""
+    path = _LOCAL_BASE / key
     try:
-        async with session.client("s3") as s3:
-            resp = await s3.get_object(Bucket=settings.S3_BUCKET, Key=key)
-            return await resp["Body"].read()
+        return await asyncio.to_thread(path.read_bytes)
+    except FileNotFoundError:
+        logger.warning("File not found: %s", path)
+        return None
     except Exception as e:
-        logger.warning("Failed to load S3 key %s: %s", key, e)
+        logger.warning("Failed to load file %s: %s", key, e)
         return None
 
 

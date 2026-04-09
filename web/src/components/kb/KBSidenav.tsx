@@ -3,7 +3,7 @@
 import * as React from 'react'
 import {
   ChevronRight, FileText, FolderOpen, NotepadText, Folder, Loader2,
-  Upload, BookOpen, ArrowUpRight, Plus, Search as SearchIcon,
+  Upload, BookOpen, Plus, Search as SearchIcon, Globe,
   Image, Sheet, Presentation, FileCode,
   Lightbulb, Landmark, ScrollText,
 } from 'lucide-react'
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/command'
 import { cn } from '@/lib/utils'
 import { SourceContextMenu, SourceAreaContextMenu } from '@/components/kb/ContextMenus'
+import { SourceIngestionDropdown } from '@/components/kb/SourceIngestionMenu'
 import { WikiSelector } from '@/components/kb/WikiSelector'
 import { SidenavUserMenu } from '@/components/kb/SidenavUserMenu'
 import { apiFetch } from '@/lib/api'
@@ -66,13 +67,44 @@ function buildSourceTree(docs: DocumentListItem[]): SourceNode[] {
     return current
   }
 
+  // Build a lookup of confluence_page_id -> SourceNode for parent-child nesting
+  const confluenceNodes = new Map<string, SourceNode>()
+  const confluenceParentMap = new Map<string, string>() // doc page_id -> parent page_id
+
+  // First pass: create all nodes and index Confluence docs
+  const allNodes: Array<{ node: SourceNode; doc: DocumentListItem }> = []
   for (const doc of docs) {
-    const parent = getOrCreateFolder(doc.path ?? '/')
-    parent.push({
+    const node: SourceNode = {
       type: 'document',
       name: doc.title || doc.filename,
       doc,
-    })
+      children: [],
+    }
+    allNodes.push({ node, doc })
+
+    const meta = doc.metadata as Record<string, unknown> | null
+    const pageId = meta?.confluence_page_id as string | undefined
+    const parentId = meta?.confluence_parent_id as string | undefined
+    if (pageId) {
+      confluenceNodes.set(pageId, node)
+      if (parentId) confluenceParentMap.set(pageId, parentId)
+    }
+  }
+
+  // Second pass: nest children under their Confluence parent, or fall back to path-based tree
+  for (const { node, doc } of allNodes) {
+    const meta = doc.metadata as Record<string, unknown> | null
+    const pageId = meta?.confluence_page_id as string | undefined
+    const parentId = pageId ? confluenceParentMap.get(pageId) : undefined
+
+    if (parentId && confluenceNodes.has(parentId)) {
+      // Nest under the parent Confluence doc
+      confluenceNodes.get(parentId)!.children!.push(node)
+    } else {
+      // Fall back to path-based grouping
+      const parent = getOrCreateFolder(doc.path ?? '/')
+      parent.push(node)
+    }
   }
 
   const sortNodes = (nodes: SourceNode[]) => {
@@ -103,8 +135,10 @@ interface KBSidenavProps {
   onCreateNote: () => void
   onCreateFolder: (name: string) => void
   onUpload: () => void
+  onConfluenceImport: () => void
   onDeleteDocument: (id: string) => void
   onRenameDocument: (id: string, newTitle: string) => void
+  onReimportDocument: (id: string) => void
   onMoveDocument: (docId: string, targetPath: string) => void
   selectedIds?: Set<string>
   onSelect?: (docId: string, e: React.MouseEvent) => void
@@ -125,8 +159,10 @@ export function KBSidenav({
   onCreateNote,
   onCreateFolder,
   onUpload,
+  onConfluenceImport,
   onDeleteDocument,
   onRenameDocument,
+  onReimportDocument,
   onMoveDocument,
   selectedIds = new Set(),
   onSelect,
@@ -218,13 +254,14 @@ export function KBSidenav({
           <span className="flex-1 text-left">Search</span>
           <kbd className="text-[10px] text-muted-foreground/30 bg-muted px-1 rounded">⌘K</kbd>
         </button>
-        <button
-          onClick={onUpload}
-          className="flex items-center justify-center px-2.5 py-1.5 text-muted-foreground/50 hover:text-muted-foreground border border-border hover:bg-accent rounded-md transition-colors cursor-pointer"
-          title="Upload files"
-        >
-          <Upload className="size-3" />
-        </button>
+        <SourceIngestionDropdown onUpload={onUpload} onConfluenceImport={onConfluenceImport}>
+          <button
+            className="flex items-center justify-center px-2.5 py-1.5 text-muted-foreground/50 hover:text-muted-foreground border border-border hover:bg-accent rounded-md transition-colors cursor-pointer"
+            title="Add sources"
+          >
+            <Upload className="size-3" />
+          </button>
+        </SourceIngestionDropdown>
       </div>
 
       {/* Search palette */}
@@ -310,16 +347,7 @@ export function KBSidenav({
           ) : (
             <div className="px-2 py-4 text-center">
               <BookOpen className="size-6 text-muted-foreground/20 mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground mb-2">No wiki yet</p>
-              <a
-                href="https://claude.ai"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                Open Claude
-                <ArrowUpRight className="size-3" />
-              </a>
+              <p className="text-xs text-muted-foreground">No wiki yet</p>
             </div>
           )}
         </div>
@@ -368,6 +396,10 @@ export function KBSidenav({
                 <Upload className="size-3.5 mr-2" />
                 Upload Files
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={onConfluenceImport}>
+                <Globe className="size-3.5 mr-2" />
+                Import from Confluence
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -387,6 +419,7 @@ export function KBSidenav({
                     onSelect={onSourceSelect}
                     onDelete={onDeleteDocument}
                     onRename={onRenameDocument}
+                    onReimport={onReimportDocument}
                     onMove={onMoveDocument}
                     selectedIds={selectedIds}
                     onMultiSelect={onSelect}
@@ -394,14 +427,7 @@ export function KBSidenav({
                 ))
               ) : (
                 <div className="px-2 py-4 text-center">
-                  <p className="text-xs text-muted-foreground/40 mb-2">No sources yet</p>
-                  <button
-                    onClick={onUpload}
-                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
-                  >
-                    <Upload className="size-3" />
-                    Upload files
-                  </button>
+                  <p className="text-xs text-muted-foreground/40">No sources yet</p>
                 </div>
               )}
               {sourceDocs.length > 8 && (
@@ -618,6 +644,7 @@ function SourceTreeNode({
   onSelect,
   onDelete,
   onRename,
+  onReimport,
   onMove,
   selectedIds = new Set(),
   onMultiSelect,
@@ -629,6 +656,7 @@ function SourceTreeNode({
   onSelect: (doc: DocumentListItem) => void
   onDelete: (id: string) => void
   onRename: (id: string, newTitle: string) => void
+  onReimport: (id: string) => void
   onMove: (docId: string, targetPath: string) => void
   selectedIds?: Set<string>
   onMultiSelect?: (docId: string, e: React.MouseEvent) => void
@@ -707,6 +735,7 @@ function SourceTreeNode({
                 onSelect={onSelect}
                 onDelete={onDelete}
                 onRename={onRename}
+                onReimport={onReimport}
                 onMove={onMove}
                 selectedIds={selectedIds}
                 onMultiSelect={onMultiSelect}
@@ -718,6 +747,7 @@ function SourceTreeNode({
     )
   }
 
+  const hasChildren = node.children && node.children.length > 0
   const isActive = node.doc?.id != null && node.doc.id === activeDocId
   const isMultiSelected = node.doc?.id != null && selectedIds.has(node.doc.id)
 
@@ -746,60 +776,92 @@ function SourceTreeNode({
   }
 
   return (
-    <div
-      draggable
-      onDragStart={(e) => {
-        if (node.doc) {
-          e.dataTransfer.setData('application/x-llmwiki-doc', node.doc.id)
-          e.dataTransfer.effectAllowed = 'move'
-        }
-      }}
-      className={cn(
-        'flex items-center gap-1.5 w-full text-left text-xs rounded-md px-2 py-1 transition-colors cursor-pointer group',
-        isMultiSelected
-          ? 'bg-primary/10 text-foreground ring-1 ring-primary/30'
-          : isActive
-            ? 'bg-accent text-foreground font-medium'
-            : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+    <div>
+      <div
+        draggable
+        onDragStart={(e) => {
+          if (node.doc) {
+            e.dataTransfer.setData('application/x-llmwiki-doc', node.doc.id)
+            e.dataTransfer.effectAllowed = 'move'
+          }
+        }}
+        className={cn(
+          'flex items-center gap-1.5 w-full text-left text-xs rounded-md px-2 py-1 transition-colors cursor-pointer group',
+          isMultiSelected
+            ? 'bg-primary/10 text-foreground ring-1 ring-primary/30'
+            : isActive
+              ? 'bg-accent text-foreground font-medium'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+        )}
+        style={{ paddingLeft: `${depth * 12 + 8 + (hasChildren ? 0 : 16)}px` }}
+        onClick={(e: React.MouseEvent) => {
+          if (!node.doc) return
+          if ((e.metaKey || e.ctrlKey || e.shiftKey) && onMultiSelect) {
+            onMultiSelect(node.doc.id, e)
+          } else {
+            onSelect(node.doc)
+          }
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          setContextPos({ x: e.clientX, y: e.clientY })
+          setContextOpen(true)
+        }}
+      >
+        {hasChildren && (
+          <ChevronRight
+            className={cn(
+              'size-3 shrink-0 transition-transform duration-150 opacity-50',
+              expanded && 'rotate-90',
+            )}
+            onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v) }}
+          />
+        )}
+        {node.doc?.status === 'pending' || node.doc?.status === 'processing' ? (
+          <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground/50" />
+        ) : node.doc?.status === 'failed' ? (
+          <FileText className="size-3 shrink-0 text-destructive/60" />
+        ) : (() => {
+          const ft = node.doc?.file_type || ''
+          if (ft === 'pdf') return <FileText className="size-3 shrink-0 text-red-400/70" />
+          if (['png','jpg','jpeg','webp','gif'].includes(ft)) return <Image className="size-3 shrink-0 text-violet-400/70" />
+          if (['xlsx','xls','csv'].includes(ft)) return <Sheet className="size-3 shrink-0 text-emerald-500/70" />
+          if (['pptx','ppt'].includes(ft)) return <Presentation className="size-3 shrink-0 text-orange-400/70" />
+          if (['html','htm'].includes(ft)) return <FileCode className="size-3 shrink-0 text-sky-400/70" />
+          return <NotepadText className="size-3 shrink-0 opacity-50" />
+        })()}
+        <span className="truncate flex-1">{node.name}</span>
+        <SourceContextMenu
+          open={contextOpen}
+          x={contextPos?.x ?? 0}
+          y={contextPos?.y ?? 0}
+          onRename={() => { setContextOpen(false); startRename() }}
+          onDelete={() => { setContextOpen(false); node.doc && onDelete(node.doc.id) }}
+          onReimport={node.doc?.parser === 'confluence' ? () => { setContextOpen(false); node.doc && onReimport(node.doc.id) } : undefined}
+          onClose={() => setContextOpen(false)}
+        />
+      </div>
+      {hasChildren && expanded && (
+        <div className="mt-0.5">
+          {node.children!.map((child, i) => (
+            <SourceTreeNode
+              key={child.doc?.id ?? child.name ?? i}
+              node={child}
+              depth={depth + 1}
+              activeDocId={activeDocId}
+              parentPath={folderPath}
+              onSelect={onSelect}
+              onDelete={onDelete}
+              onRename={onRename}
+              onReimport={onReimport}
+              onMove={onMove}
+              selectedIds={selectedIds}
+              onMultiSelect={onMultiSelect}
+            />
+          ))}
+        </div>
       )}
-      style={{ paddingLeft: `${depth * 12 + 8 + 16}px` }}
-      onClick={(e: React.MouseEvent) => {
-        if (!node.doc) return
-        if ((e.metaKey || e.ctrlKey || e.shiftKey) && onMultiSelect) {
-          onMultiSelect(node.doc.id, e)
-        } else {
-          onSelect(node.doc)
-        }
-      }}
-      onContextMenu={(e) => {
-        e.preventDefault()
-        e.stopPropagation()
-        setContextPos({ x: e.clientX, y: e.clientY })
-        setContextOpen(true)
-      }}
-    >
-      {node.doc?.status === 'pending' || node.doc?.status === 'processing' ? (
-        <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground/50" />
-      ) : node.doc?.status === 'failed' ? (
-        <FileText className="size-3 shrink-0 text-destructive/60" />
-      ) : (() => {
-        const ft = node.doc?.file_type || ''
-        if (ft === 'pdf') return <FileText className="size-3 shrink-0 text-red-400/70" />
-        if (['png','jpg','jpeg','webp','gif'].includes(ft)) return <Image className="size-3 shrink-0 text-violet-400/70" />
-        if (['xlsx','xls','csv'].includes(ft)) return <Sheet className="size-3 shrink-0 text-emerald-500/70" />
-        if (['pptx','ppt'].includes(ft)) return <Presentation className="size-3 shrink-0 text-orange-400/70" />
-        if (['html','htm'].includes(ft)) return <FileCode className="size-3 shrink-0 text-sky-400/70" />
-        return <NotepadText className="size-3 shrink-0 opacity-50" />
-      })()}
-      <span className="truncate flex-1">{node.name}</span>
-      <SourceContextMenu
-        open={contextOpen}
-        x={contextPos?.x ?? 0}
-        y={contextPos?.y ?? 0}
-        onRename={() => { setContextOpen(false); startRename() }}
-        onDelete={() => { setContextOpen(false); node.doc && onDelete(node.doc.id) }}
-        onClose={() => setContextOpen(false)}
-      />
     </div>
   )
 }
