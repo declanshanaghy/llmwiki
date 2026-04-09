@@ -434,7 +434,6 @@ export function KBSidenav({
 
       {/* Page usage + user menu at bottom */}
       <div className="shrink-0 border-t border-border p-2 space-y-1">
-        <PageUsageBar />
         <SidenavUserMenu />
       </div>
 

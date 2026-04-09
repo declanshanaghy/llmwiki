@@ -69,17 +69,6 @@ Once connected, Claude has full access to your knowledge vault:
 
 ---
 
-## Getting Started
-
-The fastest way to try LLM Wiki:
-
-1. **Sign up** at [llmwiki.app](https://llmwiki.app) and create a knowledge base
-2. **Upload sources** — drop in PDFs, notes, articles
-3. **Connect Claude** — go to Settings, copy the MCP config, add it as a connector in Claude.ai
-4. **Start building** — tell Claude to read your sources and compile the wiki
-
-That's it. No local setup required.
-
 ### Self-Hosting
 
 #### Prerequisites

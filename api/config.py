@@ -22,16 +22,16 @@ class Settings(BaseSettings):
     APP_URL: str = "http://localhost:3000"
     API_URL: str = "http://localhost:8000"
 
-    QUOTA_MAX_PAGES: int = 500  # per-user page limit (free tier)
-    QUOTA_MAX_PAGES_PER_DOC: int = 300  # max pages per single document
-    QUOTA_MAX_STORAGE_BYTES: int = 1_073_741_824  # 1 GB per user
+    QUOTA_MAX_PAGES: int = 999_999_999  # per-user page limit (effectively unlimited)
+    QUOTA_MAX_PAGES_PER_DOC: int = 999_999_999  # max pages per single document (effectively unlimited)
+    QUOTA_MAX_STORAGE_BYTES: int = 999_999_999_999  # ~1 TB per user (effectively unlimited)
 
     CONVERTER_URL: str = ""
     CONVERTER_SECRET: str = ""
 
     GLOBAL_OCR_ENABLED: bool = True
-    GLOBAL_MAX_PAGES: int = 50_000
-    GLOBAL_MAX_USERS: int = 200
+    GLOBAL_MAX_PAGES: int = 999_999_999  # effectively unlimited
+    GLOBAL_MAX_USERS: int = 999_999_999  # effectively unlimited
 
     SENTRY_DSN: str = ""
 
