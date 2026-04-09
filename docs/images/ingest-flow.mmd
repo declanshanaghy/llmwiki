@@ -1,0 +1,53 @@
+%%{init: {"flowchart": {"htmlLabels": false}, "theme": "base", "themeVariables": {"primaryColor": "#2d3748", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#4a5568", "lineColor": "#718096", "clusterBkg": "#1a202c", "clusterBorder": "#4a5568", "fontSize": "14px"}}}%%
+graph TB
+    subgraph Sources["Living Sources (auto-synced)"]
+        Confluence["Confluence\nDesign docs, ERDs\narchitecture pages"]
+        GDocs["Google Docs\nSpecs, RFCs\nprocess docs"]
+        BB["Bitbucket Repos\ncribl-cloud, cribl\npublic-api"]
+    end
+
+    subgraph Ingest["Ingest & Correlation Engine"]
+        Parse["Parse & Preserve\nlinks, hierarchy\nembedded diagrams"]
+        Correlate["Cross-Correlate\ndocs ↔ code\ndesign ↔ implementation"]
+        Audit["Alignment Audit\nflag mismatches\nflag missing docs\nflag stale claims"]
+    end
+
+    subgraph Wiki["Compiled Wiki (MCP-accessible)"]
+        Entities["Entity Pages\nservices, products\nrepos, APIs"]
+        Concepts["Concept Pages\npatterns, security\ndeployment, identity"]
+        Graph["Knowledge Graph\ndependencies\nimpact analysis"]
+        Flags["Discrepancy Report\nstale docs by author\nback-port notifications"]
+    end
+
+    subgraph Consumers["Consumers"]
+        Agent["Coding Agents\nbug fixes, features\ncode review"]
+        Human["Engineers\nbrowse, search\nvalidate"]
+    end
+
+    Confluence --> Parse
+    GDocs --> Parse
+    BB --> Parse
+    Parse --> Correlate
+    Correlate --> Audit
+    Audit --> Entities
+    Audit --> Concepts
+    Audit --> Graph
+    Audit --> Flags
+    Entities --> Agent
+    Concepts --> Agent
+    Graph --> Agent
+    Flags --> Human
+    Human -->|curate sources\nreview discrepancies| Ingest
+
+    style Confluence fill:#FF6600,stroke:#CC5200,color:#000
+    style GDocs fill:#0B6CD9,stroke:#0958B3,color:#fff
+    style BB fill:#8B5CF6,stroke:#7C3AED,color:#fff
+    style Parse fill:#00CCCC,stroke:#009999,color:#000
+    style Correlate fill:#00CCCC,stroke:#009999,color:#000
+    style Audit fill:#EC4899,stroke:#BE185D,color:#fff
+    style Entities fill:#00CC99,stroke:#009973,color:#000
+    style Concepts fill:#00CC99,stroke:#009973,color:#000
+    style Graph fill:#00CC99,stroke:#009973,color:#000
+    style Flags fill:#CC190A,stroke:#991307,color:#fff
+    style Agent fill:#66CC33,stroke:#4da626,color:#000
+    style Human fill:#D8D8D8,stroke:#CCCCCC,color:#000

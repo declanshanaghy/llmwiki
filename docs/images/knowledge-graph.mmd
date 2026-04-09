@@ -1,0 +1,12 @@
+%%{init: {"flowchart": {"htmlLabels": false}, "theme": "base", "themeVariables": {"primaryColor": "#2d3748", "primaryTextColor": "#e2e8f0", "primaryBorderColor": "#4a5568", "lineColor": "#718096", "fontSize": "14px"}}}%%
+graph LR
+    ERD["Confluence ERD\nAuth Middleware Design"] --> Code["cribl-cloud\nsrc/auth/middleware.ts"]
+    ERD --> API["public-api\nauth endpoints"]
+    Code --> Deps["cribl\nshared auth utils"]
+    ERD --> Compliance["Google Doc\nFedRAMP Requirements"]
+
+    style ERD fill:#FF6600,stroke:#CC5200,color:#000
+    style Code fill:#8B5CF6,stroke:#7C3AED,color:#fff
+    style API fill:#8B5CF6,stroke:#7C3AED,color:#fff
+    style Deps fill:#8B5CF6,stroke:#7C3AED,color:#fff
+    style Compliance fill:#0B6CD9,stroke:#0958B3,color:#fff
