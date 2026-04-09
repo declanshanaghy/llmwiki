@@ -167,19 +167,19 @@ export function KBSidenav({
   selectedIds = new Set(),
   onSelect,
 }: KBSidenavProps) {
-  const [sourcesExpanded, setSourcesExpanded] = React.useState(() => {
-    if (typeof window === 'undefined') return false
-    return localStorage.getItem('llmwiki:sources-expanded') === 'true'
+  // Tab state — default to wiki, auto-switch based on selection
+  const [sidebarTab, setSidebarTab] = React.useState<'wiki' | 'sources'>(() => {
+    if (activeSourceDocId) return 'sources'
+    return 'wiki'
   })
 
-  const prevSourceCount = React.useRef(sourceDocs.length)
+  // Auto-switch tab when selection changes
   React.useEffect(() => {
-    if (sourceDocs.length > prevSourceCount.current && !sourcesExpanded) {
-      setSourcesExpanded(true)
-      localStorage.setItem('llmwiki:sources-expanded', 'true')
-    }
-    prevSourceCount.current = sourceDocs.length
-  }, [sourceDocs.length, sourcesExpanded])
+    if (activeSourceDocId) setSidebarTab('sources')
+    else if (wikiActivePath) setSidebarTab('wiki')
+  }, [activeSourceDocId, wikiActivePath])
+
+  const [sourcesExpanded, setSourcesExpanded] = React.useState(true)
 
   const toggleSources = () => {
     const next = !sourcesExpanded
@@ -191,8 +191,6 @@ export function KBSidenav({
 
   const [folderDialogOpen, setFolderDialogOpen] = React.useState(false)
   const [folderName, setFolderName] = React.useState('')
-  const [allSourcesOpen, setAllSourcesOpen] = React.useState(false)
-
   const handleCreateFolder = () => {
     if (!folderName.trim()) return
     onCreateFolder(folderName.trim())
@@ -264,44 +262,47 @@ export function KBSidenav({
         </SourceIngestionDropdown>
       </div>
 
-      {/* Search palette */}
+      {/* Search palette — scoped to active tab */}
       <CommandDialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <CommandInput placeholder="Search pages and sources..." />
+        <CommandInput placeholder={sidebarTab === 'wiki' ? 'Search wiki pages...' : 'Search sources...'} />
         <CommandList>
           <CommandEmpty>No results found.</CommandEmpty>
-          {allSearchableItems.some((i) => i.type === 'wiki') && (
-            <CommandGroup heading="Wiki">
-              {allSearchableItems.filter((i) => i.type === 'wiki').map((item) => (
-                <CommandItem
-                  key={`wiki-${item.path}`}
-                  value={item.title}
-                  onSelect={() => {
-                    setSearchOpen(false)
-                    if (item.path) onWikiNavigate(item.path)
-                  }}
-                >
-                  <FileText className="size-3.5 mr-2 opacity-50" />
-                  {item.title}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          )}
-          {allSearchableItems.some((i) => i.type === 'source') && (
-            <CommandGroup heading="Sources">
-              {allSearchableItems.filter((i) => i.type === 'source').map((item) => (
-                <CommandItem
-                  key={`source-${item.doc?.id}`}
-                  value={item.title}
-                  onSelect={() => {
-                    setSearchOpen(false)
-                    if (item.doc) onSourceSelect(item.doc)
-                  }}
-                >
-                  <NotepadText className="size-3.5 mr-2 opacity-50" />
-                  {item.title}
-                </CommandItem>
-              ))}
-            </CommandGroup>
+          {sidebarTab === 'wiki' ? (
+            allSearchableItems.filter((i) => i.type === 'wiki').length > 0 && (
+              <CommandGroup heading="Wiki">
+                {allSearchableItems.filter((i) => i.type === 'wiki').map((item) => (
+                  <CommandItem
+                    key={`wiki-${item.path}`}
+                    value={item.title}
+                    onSelect={() => {
+                      setSearchOpen(false)
+                      if (item.path) onWikiNavigate(item.path)
+                    }}
+                  >
+                    <FileText className="size-3.5 mr-2 opacity-50" />
+                    {item.title}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )
+          ) : (
+            allSearchableItems.filter((i) => i.type === 'source').length > 0 && (
+              <CommandGroup heading="Sources">
+                {allSearchableItems.filter((i) => i.type === 'source').map((item) => (
+                  <CommandItem
+                    key={`source-${item.doc?.id}`}
+                    value={item.title}
+                    onSelect={() => {
+                      setSearchOpen(false)
+                      if (item.doc) onSourceSelect(item.doc)
+                    }}
+                  >
+                    <NotepadText className="size-3.5 mr-2 opacity-50" />
+                    {item.title}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            )
           )}
           <CommandSeparator />
           <CommandGroup heading="Actions">
@@ -321,127 +322,124 @@ export function KBSidenav({
         </CommandList>
       </CommandDialog>
 
-      {/* Wiki + Sources — share remaining space, each scrollable */}
-      <div className="flex-1 min-h-0 flex flex-col">
-        {/* Wiki section */}
-        <div className="flex flex-col min-h-0 px-2 pt-1" style={{ maxHeight: '50%' }}>
-          <div className="flex items-center px-2 mb-1 shrink-0">
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
-              Wiki
-            </span>
-          </div>
-          {loading ? (
-            <SidenavSkeleton lines={3} />
-          ) : hasWiki ? (
-            <div className="overflow-y-auto no-scrollbar space-y-0.5">
-              {wikiTree.map((node, i) => (
-                <WikiTreeNode
-                  key={node.path ?? node.title ?? i}
-                  node={node}
-                  depth={0}
-                  activePath={wikiActivePath}
-                  onNavigate={onWikiNavigate}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="px-2 py-4 text-center">
-              <BookOpen className="size-6 text-muted-foreground/20 mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground">No wiki yet</p>
-            </div>
+      {/* Wiki | Sources tabs */}
+      <div className="shrink-0 px-2 flex items-center border-b border-border">
+        <button
+          onClick={() => setSidebarTab('wiki')}
+          className={cn(
+            'flex-1 py-1.5 text-[11px] font-medium text-center transition-colors cursor-pointer',
+            sidebarTab === 'wiki'
+              ? 'text-foreground border-b-2 border-foreground'
+              : 'text-muted-foreground/50 hover:text-muted-foreground',
           )}
-        </div>
-
-        {/* Sources section */}
-        <div
-          className="flex-1 min-h-0 flex flex-col px-2 mt-2"
-          onContextMenu={handleSourcesAreaContext}
         >
-        <div className="flex items-center shrink-0">
-          <button
-            onClick={toggleSources}
-            className="flex items-center gap-1 px-2 py-1 flex-1 text-left cursor-pointer group"
-          >
-            <ChevronRight
-              className={cn(
-                'size-3 text-muted-foreground/40 transition-transform duration-150',
-                sourcesExpanded && 'rotate-90',
-              )}
-            />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50 group-hover:text-muted-foreground transition-colors">
-              Sources
-            </span>
-            {sourceDocs.length > 0 && (
-              <span className="text-[10px] text-muted-foreground/30 ml-1">
-                {sourceDocs.length}
-              </span>
-            )}
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="p-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent transition-colors cursor-pointer mr-1">
-                <Plus className="size-3" />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" side="bottom">
-              <DropdownMenuItem onClick={onCreateNote}>
-                <NotepadText className="size-3.5 mr-2" />
-                New Note
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setFolderDialogOpen(true)}>
-                <Folder className="size-3.5 mr-2" />
-                New Folder
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onUpload}>
-                <Upload className="size-3.5 mr-2" />
-                Upload Files
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={onConfluenceImport}>
-                <Globe className="size-3.5 mr-2" />
-                Import from Confluence
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-        {sourcesExpanded && (
-          <div className="flex-1 overflow-y-auto no-scrollbar mt-0.5">
-            <div className="space-y-0.5">
-              {loading ? (
-                <SidenavSkeleton lines={6} />
-              ) : sourceTree.length > 0 ? (
-                sourceTree.map((node, i) => (
-                  <SourceTreeNode
-                    key={node.doc?.id ?? node.name ?? i}
+          Wiki
+        </button>
+        <button
+          onClick={() => setSidebarTab('sources')}
+          className={cn(
+            'flex-1 py-1.5 text-[11px] font-medium text-center transition-colors cursor-pointer',
+            sidebarTab === 'sources'
+              ? 'text-foreground border-b-2 border-foreground'
+              : 'text-muted-foreground/50 hover:text-muted-foreground',
+          )}
+        >
+          Sources
+          {sourceDocs.length > 0 && (
+            <span className="text-[10px] text-muted-foreground/30 ml-1">{sourceDocs.length}</span>
+          )}
+        </button>
+      </div>
+
+      {/* Tab content — full height, scrollable */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        {sidebarTab === 'wiki' ? (
+          <div className="flex-1 overflow-y-auto no-scrollbar px-2 pt-1">
+            {loading ? (
+              <SidenavSkeleton lines={3} />
+            ) : hasWiki ? (
+              <div className="space-y-0.5">
+                {wikiTree.map((node, i) => (
+                  <WikiTreeNode
+                    key={node.path ?? node.title ?? i}
                     node={node}
                     depth={0}
-                    activeDocId={activeSourceDocId}
-                    parentPath="/"
-                    onSelect={onSourceSelect}
-                    onDelete={onDeleteDocument}
-                    onRename={onRenameDocument}
-                    onReimport={onReimportDocument}
-                    onMove={onMoveDocument}
-                    selectedIds={selectedIds}
-                    onMultiSelect={onSelect}
+                    activePath={wikiActivePath}
+                    onNavigate={onWikiNavigate}
                   />
-                ))
-              ) : (
-                <div className="px-2 py-4 text-center">
-                  <p className="text-xs text-muted-foreground/40">No sources yet</p>
-                </div>
-              )}
-              {sourceDocs.length > 8 && (
-                <button
-                  onClick={() => setAllSourcesOpen(true)}
-                  className="w-full px-2 py-1.5 text-[10px] text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer text-center"
-                >
-                  View all {sourceDocs.length} sources
-                </button>
-              )}
+                ))}
+              </div>
+            ) : (
+              <div className="px-2 py-4 text-center">
+                <BookOpen className="size-6 text-muted-foreground/20 mx-auto mb-2" />
+                <p className="text-xs text-muted-foreground">No wiki yet</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div
+            className="flex-1 min-h-0 flex flex-col"
+            onContextMenu={handleSourcesAreaContext}
+          >
+            {/* Sources toolbar */}
+            <div className="flex items-center shrink-0 px-2 pt-1 pb-0.5">
+              <span className="flex-1" />
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="p-1 rounded-md text-muted-foreground/40 hover:text-muted-foreground hover:bg-accent transition-colors cursor-pointer">
+                    <Plus className="size-3" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" side="bottom">
+                  <DropdownMenuItem onClick={onCreateNote}>
+                    <NotepadText className="size-3.5 mr-2" />
+                    New Note
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setFolderDialogOpen(true)}>
+                    <Folder className="size-3.5 mr-2" />
+                    New Folder
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onUpload}>
+                    <Upload className="size-3.5 mr-2" />
+                    Upload Files
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={onConfluenceImport}>
+                    <Globe className="size-3.5 mr-2" />
+                    Import from Confluence
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className="flex-1 overflow-y-auto no-scrollbar px-2">
+              <div className="space-y-0.5">
+                {loading ? (
+                  <SidenavSkeleton lines={6} />
+                ) : sourceTree.length > 0 ? (
+                  sourceTree.map((node, i) => (
+                    <SourceTreeNode
+                      key={node.doc?.id ?? node.name ?? i}
+                      node={node}
+                      depth={0}
+                      activeDocId={activeSourceDocId}
+                      parentPath="/"
+                      onSelect={onSourceSelect}
+                      onDelete={onDeleteDocument}
+                      onRename={onRenameDocument}
+                      onReimport={onReimportDocument}
+                      onMove={onMoveDocument}
+                      selectedIds={selectedIds}
+                      onMultiSelect={onSelect}
+                    />
+                  ))
+                ) : (
+                  <div className="px-2 py-4 text-center">
+                    <p className="text-xs text-muted-foreground/40">No sources yet</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
-        </div>
       </div>
 
       {/* Area-level context menu (right-click anywhere in sources) */}
@@ -489,49 +487,6 @@ export function KBSidenav({
         </DialogContent>
       </Dialog>
 
-      {/* All sources dialog */}
-      <Dialog open={allSourcesOpen} onOpenChange={setAllSourcesOpen}>
-        <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
-          <DialogHeader>
-            <DialogTitle>All Sources ({sourceDocs.length})</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto -mx-6 px-6">
-            <div className="grid grid-cols-1 gap-0.5">
-              {sourceDocs
-                .sort((a, b) => (a.title || a.filename).localeCompare(b.title || b.filename))
-                .map((doc) => (
-                <button
-                  key={doc.id}
-                  onClick={() => {
-                    setAllSourcesOpen(false)
-                    onSourceSelect(doc)
-                  }}
-                  className={cn(
-                    'flex items-center gap-2.5 w-full text-left px-3 py-2 rounded-md transition-colors cursor-pointer',
-                    doc.id === activeSourceDocId
-                      ? 'bg-accent text-foreground'
-                      : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground',
-                  )}
-                >
-                  {(() => {
-                    const ft = doc.file_type || ''
-                    if (ft === 'pdf') return <FileText className="size-4 shrink-0 text-red-400/70" />
-                    if (['png','jpg','jpeg','webp','gif'].includes(ft)) return <Image className="size-4 shrink-0 text-violet-400/70" />
-                    if (['xlsx','xls','csv'].includes(ft)) return <Sheet className="size-4 shrink-0 text-emerald-500/70" />
-                    if (['pptx','ppt'].includes(ft)) return <Presentation className="size-4 shrink-0 text-orange-400/70" />
-                    if (['html','htm'].includes(ft)) return <FileCode className="size-4 shrink-0 text-sky-400/70" />
-                    return <NotepadText className="size-4 shrink-0 opacity-50" />
-                  })()}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm truncate">{doc.title || doc.filename}</div>
-                    <div className="text-[10px] text-muted-foreground/50">{doc.file_type.toUpperCase()}{doc.page_count ? ` · ${doc.page_count} pages` : ''}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
