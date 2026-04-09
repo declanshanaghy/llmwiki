@@ -1,33 +1,75 @@
-# LLM Wiki
+# Cribl Knowledge Wiki
 
-[![Live Demo](https://img.shields.io/badge/demo-llmwiki.app-blue)](https://llmwiki.app)
 [![License](https://img.shields.io/badge/license-Apache%202.0-green)](https://opensource.org/licenses/Apache-2.0)
 
-Free, open-source implementation of [Karpathy's LLM Wiki](https://x.com/karpathy/status/2039805659525644595) ([spec](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)). Available at [llmwiki.app](https://llmwiki.app).
+An internal knowledge platform that imports documentation from Confluence, Google Docs, and Bitbucket repositories, then uses Claude to compile and maintain a structured wiki across Cribl's engineering systems. Cross-correlates design docs, source code, and operational knowledge to build a graph of how things connect — so you can understand how things work and predict what will happen when things change.
 
-1. **Upload sources** — PDFs, articles, notes, office docs. Review them in a full document viewer.
-2. **Connect Claude** — via MCP. It reads your sources, writes wiki pages, maintains cross-references and citations.
-3. **The wiki compounds** — every source you add and every question you ask makes it richer. Knowledge is built up, not re-derived.
+1. **Import sources** — Pull pages from Confluence (with full hierarchy), Google Docs, Bitbucket repos, PDFs, and internal notes. Auto-sync keeps everything current.
+2. **Connect Claude** — via MCP. It reads your sources, writes wiki pages, maintains cross-references and citations across Cribl systems.
+3. **The wiki compounds** — every source imported and every question asked makes it richer. Knowledge about Cribl.Cloud, Stream, Edge, Search, and Lake is built up, not re-derived.
+4. **The knowledge graph grows** — connections between Confluence design docs, Google Docs specs, and Bitbucket source trees are tracked. Claude maps which code implements which design, which services depend on which, and what breaks when something changes.
 
-![LLM Wiki — a compiled wiki page with citations and table of contents](wiki-page.png)
+### Source Integrations
+
+| Source | Status | Details |
+|--------|--------|---------|
+| **Confluence** | Live | Import pages with hierarchy, embedded images, draw.io diagrams. Auto-sync detects updates. Bulk import children or entire spaces. |
+| **Bitbucket** | Planned | Track multiple repos. Index source trees, READMEs, config files, and code structure. Cross-reference with design docs to map implementation to intent. |
+| **Google Docs** | Planned | Import shared docs with formatting and embedded content. |
+| **PDFs** | Live | OCR via Mistral, page-level chunking, inline images. |
+| **Office docs** | Live | Word, PowerPoint, Excel — converted via LibreOffice. |
+| **Manual notes** | Live | Markdown/text notes created directly in the UI. |
 
 ### Three Layers
 
 | Layer | Description |
 |-------|-------------|
-| **Raw Sources** | PDFs, articles, notes, transcripts. Your immutable source of truth. The LLM reads them but never modifies them. |
+| **Raw Sources** | Confluence pages, Google Docs, Bitbucket repos, PDFs, notes. Your immutable source of truth. The LLM reads them but never modifies them. |
 | **The Wiki** | LLM-generated markdown pages — summaries, entity pages, cross-references, mermaid diagrams, tables. The LLM owns this layer. You read it; the LLM writes it. |
 | **The Tools** | Search, read, and write. Claude connects via MCP and orchestrates the rest. |
 
 ### Core Operations
 
-LLM Wiki ships an **MCP server** that Claude.ai connects to directly. Once connected, Claude has tools to search, read, write, and delete across your entire knowledge vault. All operations below happen through Claude — you talk to it, it maintains the wiki.
+The platform ships an **MCP server** that Claude connects to directly. Once connected, Claude has tools to search, read, write, and delete across the entire knowledge vault. All operations below happen through Claude — you talk to it, it maintains the wiki.
 
-**Ingest** — Drop a source in. Claude reads it, writes a summary, updates entity and concept pages across the wiki, and flags anything that contradicts existing knowledge. A single source might touch 10-15 wiki pages.
+**Ingest** — Import a Confluence page (or an entire space), connect a Bitbucket repo, or pull in a Google Doc. Claude reads it, writes a summary, updates entity and concept pages across the wiki, and flags anything that contradicts existing knowledge. A single source might touch 10-15 wiki pages.
 
-**Query** — Ask complex questions against the compiled wiki. Knowledge is already synthesized — not re-derived from raw chunks each time. Good answers get filed back as new pages, so your explorations compound.
+**Query** — Ask complex questions against the compiled wiki. "What services does Maestro depend on?" "Which repos implement the billing pipeline?" Knowledge is already synthesized — not re-derived from raw chunks each time. Good answers get filed back as new pages, so your explorations compound.
 
-**Lint** — Run health checks. Find inconsistent data, stale claims, orphan pages, missing cross-references. Claude suggests new questions to investigate and new sources to look for.
+**Lint** — Run health checks. Find inconsistent data, stale claims, orphan pages, missing cross-references. Detect when source code has diverged from design docs. Claude suggests new questions to investigate and new sources to look for.
+
+**Impact Analysis** — Trace connections across the knowledge graph. "If we change the auth middleware, what Confluence design docs describe the current behavior, which repos implement it, and what downstream services are affected?" The graph of connections between documents and source trees makes this possible.
+
+### Wiki Output
+
+Every wiki page Claude generates is a browsable, richly linked artifact — not a wall of text.
+
+**Source-linked citations** — Wiki pages cite specific source lines, not just filenames. A claim about how auth tokens are validated links directly to the relevant function in `cribl-cloud/src/auth/middleware.ts:47`. ERD pages link to the implementing files across `cribl-cloud`, `cribl`, and `public-api`.
+
+**Diagrams at every layer** — Claude generates Mermaid diagrams for every level of detail:
+
+| Diagram Type | What It Shows | Example |
+|-------------|---------------|---------|
+| Architecture | System-level service boundaries, data flow between Cribl.Cloud, Stream, Edge, Search, Lake | How requests flow from Maestro through Zeus to single-tenant infrastructure |
+| Component | Internal structure of a service — modules, classes, key interfaces | Auth middleware components within Maestro, how they compose |
+| Package/Deployment | What gets deployed where — containers, Lambda functions, AWS services, regions | Which services run in the control plane vs. data plane, per-tenant isolation boundaries |
+| Sequence | Runtime interactions between services for a specific operation | Token refresh flow across Auth0, Maestro, Zeus, and the tenant workspace |
+| Entity Relationship | Data models with field-level detail, cross-repo | How the billing data model in `cribl-cloud` maps to Metronome exports and the FinOps storage schema |
+| Dependency | Which repos/packages/services depend on which | What breaks if you change `public-api` response shapes |
+
+Every diagram is generated from source — not hand-drawn. When the source changes, Claude regenerates the diagram on the next sync.
+
+**Browsable hierarchy** — The wiki renders as an expandable tree. Start at the architecture overview, drill into a service, then into a component, then into a specific function's behavior. Every level links to the source docs and source code that back it.
+
+### Cribl Systems Coverage
+
+The wiki compiles knowledge across Cribl's product and infrastructure landscape:
+
+- **Cribl.Cloud** — architecture, multi-tenant services, single-tenant infrastructure
+- **Stream / Edge / Search / Lake** — product-specific design docs, ERDs, trade-offs
+- **Platform Services** — Zeus, Maestro, Auth0, billing, monitoring, CI/CD, Typhon
+- **Engineering Practices** — development patterns, security, FedRAMP, cloud considerations
+- **Key Repositories** — `cribl-cloud`, `cribl`, `public-api` — source trees indexed and cross-referenced with design docs
 
 ---
 
@@ -47,7 +89,7 @@ LLM Wiki ships an **MCP server** that Claude.ai connects to directly. Once conne
 | Component | Stack | Responsibilities |
 |-----------|-------|------------------|
 | **Web** (`web/`) | Next.js 16, React 19, Tailwind, Radix UI | Dashboard, PDF/HTML viewer, wiki renderer, onboarding |
-| **API** (`api/`) | FastAPI, asyncpg, aioboto3 | Auth, uploads (TUS), document processing, OCR (Mistral) |
+| **API** (`api/`) | FastAPI, asyncpg, aioboto3 | Auth, uploads (TUS), Confluence import, document worker, OCR (Mistral) |
 | **Converter** (`converter/`) | FastAPI, LibreOffice | Isolated office-to-PDF conversion (non-root, zero AWS creds) |
 | **MCP** (`mcp/`) | MCP SDK, Supabase OAuth | Tools for Claude: `guide`, `search`, `read`, `write`, `delete` |
 | **Database** | Supabase (Postgres + RLS + PGroonga) | Documents, chunks, knowledge bases, users |
@@ -150,11 +192,11 @@ NEXT_PUBLIC_MCP_URL=http://localhost:8080/mcp
 
 ## Why This Works
 
-The tedious part of maintaining a knowledge base is not the reading or the thinking — it's the bookkeeping. Updating cross-references, keeping summaries current, noting when new data contradicts old claims, maintaining consistency across dozens of pages.
+Engineering knowledge at Cribl lives across hundreds of Confluence pages, Google Docs, ERDs, design briefs, and dozens of Bitbucket repositories. No single person can hold the full picture. The tedious part is not the reading or the thinking — it's the bookkeeping. Updating cross-references, keeping summaries current, noting when new data contradicts old claims, tracking which code implements which design, maintaining consistency across systems that span Cloud, Stream, Edge, Search, and Lake.
 
-Humans abandon personal wikis because the maintenance burden grows faster than the value. LLMs don't get bored, don't forget to update a cross-reference, and can touch 15 files in one pass. The wiki stays maintained because the cost of maintenance drops to near zero.
+Engineers abandon personal wikis because the maintenance burden grows faster than the value. LLMs don't get bored, don't forget to update a cross-reference, and can touch 15 files in one pass. The wiki stays maintained because the cost of maintenance drops to near zero.
 
-The human's job is to curate sources, direct the analysis, ask good questions, and think about what it all means. The LLM's job is everything else.
+Import from Confluence, connect your Bitbucket repos, let Claude compile the wiki, ask it questions. The knowledge graph that emerges — connections between design docs, source trees, and operational knowledge — is the real product. The human's job is to curate sources, direct the analysis, and think about what it all means. The LLM's job is everything else.
 
 ## License
 
